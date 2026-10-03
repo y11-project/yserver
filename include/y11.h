@@ -176,12 +176,16 @@ enum y11_req_opcode {
     Y11_REQ_CONFIGURE_WINDOW         = 12,
     Y11_REQ_GET_GEOMETRY             = 14,
     Y11_REQ_QUERY_TREE               = 15,
+    Y11_REQ_CHANGE_PROPERTY          = 18,
+    Y11_REQ_DELETE_PROPERTY          = 19,
     Y11_REQ_INTERN_ATOM              = 16,
     Y11_REQ_GET_ATOM_NAME            = 17,
     Y11_REQ_GET_PROPERTY             = 20,
     Y11_REQ_LIST_PROPERTIES          = 21,
     Y11_REQ_SET_SELECTION_OWNER      = 22,
     Y11_REQ_GET_INPUT_FOCUS          = 43,
+    Y11_REQ_QUERY_POINTER           = 38,
+    Y11_REQ_TRANSLATE_COORDS       = 40,
     Y11_REQ_GET_FONT_PATH            = 52,
     Y11_REQ_CREATE_PIXMAP            = 53,
     Y11_REQ_FREE_PIXMAP              = 54,
@@ -189,10 +193,41 @@ enum y11_req_opcode {
     Y11_REQ_CHANGE_GC                = 56,
     Y11_REQ_FREE_GC                  = 60,
     Y11_REQ_QUERY_EXTENSION          = 98,
+    Y11_REQ_ALLOC_COLOR              = 84,
+    Y11_REQ_ALLOC_NAMED_COLOR        = 85,
+    Y11_REQ_FREE_COLORS              = 88,
+    Y11_REQ_STORE_COLORS             = 89,
+    Y11_REQ_STORE_NAMED_COLOR        = 90,
+    Y11_REQ_QUERY_COLORS             = 91,
+    Y11_REQ_LOOKUP_COLOR             = 92,
     Y11_REQ_GET_KEYBOARD_CONTROL     = 103,
     Y11_REQ_GET_POINTER_CONTROL      = 106,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
     Y11_REQ_NO_OPERATION             = 127
+};
+
+/*
+ * Drawing requests accepted as no-ops: y11 is headless in phases 1-2,
+ * but real clients (which render into pixmaps before they ever create
+ * a window) must be able to issue them without a BadRequest error.
+ */
+enum y11_req_draw_opcode {
+    Y11_REQ_CLEAR_AREA           = 61,
+    Y11_REQ_COPY_AREA            = 62,
+    Y11_REQ_COPY_PLANE           = 63,
+    Y11_REQ_POLY_POINT           = 64,
+    Y11_REQ_POLY_LINE            = 65,
+    Y11_REQ_POLY_SEGMENT         = 66,
+    Y11_REQ_POLY_RECTANGLE       = 67,
+    Y11_REQ_POLY_ARC             = 68,
+    Y11_REQ_FILL_POLY            = 69,
+    Y11_REQ_POLY_FILL_RECTANGLE  = 70,
+    Y11_REQ_POLY_FILL_ARC        = 71,
+    Y11_REQ_PUT_IMAGE            = 72,
+    Y11_REQ_POLY_TEXT8           = 74,
+    Y11_REQ_POLY_TEXT16          = 75,
+    Y11_REQ_IMAGE_TEXT8          = 76,
+    Y11_REQ_IMAGE_TEXT16         = 77
 };
 
 /* ---- error codes (numeric values per the X11 wire standard) ------------ */

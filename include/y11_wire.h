@@ -298,6 +298,67 @@ typedef struct {
     uint32_t pad1[3];
 } y11_query_tree_reply;         /* 32 bytes + child list */
 
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t red;                /* bytes 8-9 */
+    uint16_t green;              /* bytes 10-11 */
+    uint16_t blue;               /* bytes 12-13 */
+    uint16_t pad0;               /* bytes 14-15 */
+    uint32_t pixel;              /* bytes 16-19 */
+    uint32_t pad1[3];
+} y11_alloc_color_reply;        /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint32_t pixel;              /* bytes 8-11 */
+    uint16_t exact_red;          /* bytes 12-13 */
+    uint16_t exact_green;        /* bytes 14-15 */
+    uint16_t exact_blue;         /* bytes 16-17 */
+    uint16_t screen_red;        /* bytes 18-19 */
+    uint16_t screen_green;      /* bytes 20-21 */
+    uint16_t screen_blue;       /* bytes 22-23 */
+    uint32_t pad0[2];
+} y11_alloc_named_color_reply;  /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t n_colors;           /* bytes 8-9 */
+    uint16_t pad0;               /* bytes 10-11 */
+    uint32_t pad1[5];
+} y11_query_colors_reply;       /* 32 bytes + one 8-byte RGB item per color */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t exact_red;          /* bytes 8-9 */
+    uint16_t exact_green;        /* bytes 10-11 */
+    uint16_t exact_blue;         /* bytes 12-13 */
+    uint16_t screen_red;         /* bytes 14-15 */
+    uint16_t screen_green;      /* bytes 16-17 */
+    uint16_t screen_blue;       /* bytes 18-19 */
+    uint32_t pad0[3];
+} y11_lookup_color_reply;       /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = same-screen */
+    uint32_t child;             /* bytes 8-11 */
+    int16_t  dst_x;             /* bytes 12-13 */
+    int16_t  dst_y;             /* bytes 14-15 */
+    uint32_t pad0[4];
+} y11_translate_coords_reply;  /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = same-screen */
+    uint32_t root;              /* bytes 8-11 */
+    uint32_t child;             /* bytes 12-15 */
+    int16_t  root_x;            /* bytes 16-17 */
+    int16_t  root_y;            /* bytes 18-19 */
+    int16_t  win_x;             /* bytes 20-21 */
+    int16_t  win_y;             /* bytes 22-23 */
+    uint16_t state;             /* bytes 24-25 */
+    uint16_t pad0;              /* bytes 26-27 */
+    uint32_t pad1;              /* bytes 28-31 */
+} y11_query_pointer_reply;      /* 32 bytes */
+
 /* ---- events (all exactly 32 bytes; type@0, detail@1, sequence@2-3) -------- */
 
 typedef struct {
@@ -466,5 +527,11 @@ typedef char y11_wire_chk_map_request_event[(sizeof(y11_map_request_event) == 32
 typedef char y11_wire_chk_reparent_notify_event[(sizeof(y11_reparent_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_configure_notify_event[(sizeof(y11_configure_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_configure_request_event[(sizeof(y11_configure_request_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_alloc_color_reply[(sizeof(y11_alloc_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_alloc_named_color_reply[(sizeof(y11_alloc_named_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_lookup_color_reply[(sizeof(y11_lookup_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_query_colors_reply[(sizeof(y11_query_colors_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_query_pointer_reply[(sizeof(y11_query_pointer_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_translate_coords_reply[(sizeof(y11_translate_coords_reply) == 32) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */
