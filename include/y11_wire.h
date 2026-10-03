@@ -221,6 +221,236 @@ typedef struct {
     uint32_t pad1[5];
 } y11_error;                    /* 32 bytes */
 
+/* ---- window requests (opcodes 1, 2, 12) ----------------------------------
+ *
+ * Value lists hold exactly 4 bytes per set mask bit, packed in increasing
+ * bit order (the X11 LISTofVALUE encoding).
+ */
+
+typedef struct {
+    uint8_t  opcode;            /* 1 = CreateWindow */
+    uint8_t  depth;             /* 0 = CopyFromParent */
+    uint16_t length;
+    uint32_t wid;               /* client-chosen resource id */
+    uint32_t parent;
+    int16_t  x, y;
+    uint16_t width, height;
+    uint16_t border_width;
+    uint16_t class;             /* y11_window_class_t */
+    uint32_t visual;
+    uint32_t value_mask;
+} y11_create_window_req;        /* 32 bytes + value list */
+
+typedef struct {
+    uint8_t  opcode;            /* 2 = ChangeWindowAttributes */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t window;
+    uint32_t value_mask;
+} y11_change_window_attributes_req;     /* 12 bytes + value list */
+
+typedef struct {
+    uint8_t  opcode;            /* 12 = ConfigureWindow */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t window;
+    uint32_t value_mask;
+    uint16_t pad0_[2];
+} y11_configure_window_req;     /* 16 bytes + value list */
+
+/* ---- replies --------------------------------------------------------------- */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = backing-store; length 3 */
+    uint32_t visual;            /* bytes 8-11 */
+    uint16_t class;             /* bytes 12-13 */
+    uint8_t  bit_gravity;       /* byte 14 */
+    uint8_t  win_gravity;       /* byte 15 */
+    uint32_t backing_bit_planes;    /* bytes 16-19 */
+    uint32_t backing_pixel;     /* bytes 20-23 */
+    uint8_t  save_under;        /* byte 24 */
+    uint8_t  map_installed;     /* byte 25 */
+    uint8_t  map_state;         /* byte 26 */
+    uint8_t  override;          /* byte 27 */
+    uint32_t colormap;          /* bytes 28-31 */
+    uint32_t all_event_masks;   /* bytes 32-35 */
+    uint32_t your_event_mask;   /* bytes 36-39 */
+    uint16_t do_not_propagate_mask;     /* bytes 40-41 */
+    uint16_t pad0;              /* bytes 42-43 */
+} y11_get_window_attributes_reply;      /* 44 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = depth */
+    uint32_t root;              /* bytes 8-11 */
+    int16_t  x, y;              /* bytes 12-15 */
+    uint16_t width, height;     /* bytes 16-19 */
+    uint16_t border_width;      /* bytes 20-21 */
+    uint16_t pad0;              /* bytes 22-23 */
+    uint32_t pad1[2];
+} y11_get_geometry_reply;       /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint32_t root;              /* bytes 8-11 */
+    uint32_t parent;            /* bytes 12-15 */
+    uint16_t n_children;        /* bytes 16-17 */
+    uint16_t pad0;              /* bytes 18-19 */
+    uint32_t pad1[3];
+} y11_query_tree_reply;         /* 32 bytes + child list */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t red;                /* bytes 8-9 */
+    uint16_t green;              /* bytes 10-11 */
+    uint16_t blue;               /* bytes 12-13 */
+    uint16_t pad0;               /* bytes 14-15 */
+    uint32_t pixel;              /* bytes 16-19 */
+    uint32_t pad1[3];
+} y11_alloc_color_reply;        /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint32_t pixel;              /* bytes 8-11 */
+    uint16_t exact_red;          /* bytes 12-13 */
+    uint16_t exact_green;        /* bytes 14-15 */
+    uint16_t exact_blue;         /* bytes 16-17 */
+    uint16_t screen_red;        /* bytes 18-19 */
+    uint16_t screen_green;      /* bytes 20-21 */
+    uint16_t screen_blue;       /* bytes 22-23 */
+    uint32_t pad0[2];
+} y11_alloc_named_color_reply;  /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t n_colors;           /* bytes 8-9 */
+    uint16_t pad0;               /* bytes 10-11 */
+    uint32_t pad1[5];
+} y11_query_colors_reply;       /* 32 bytes + one 8-byte RGB item per color */
+
+typedef struct {
+    y11_reply_hdr hdr;
+    uint16_t exact_red;          /* bytes 8-9 */
+    uint16_t exact_green;        /* bytes 10-11 */
+    uint16_t exact_blue;         /* bytes 12-13 */
+    uint16_t screen_red;         /* bytes 14-15 */
+    uint16_t screen_green;      /* bytes 16-17 */
+    uint16_t screen_blue;       /* bytes 18-19 */
+    uint32_t pad0[3];
+} y11_lookup_color_reply;       /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = same-screen */
+    uint32_t child;             /* bytes 8-11 */
+    int16_t  dst_x;             /* bytes 12-13 */
+    int16_t  dst_y;             /* bytes 14-15 */
+    uint32_t pad0[4];
+} y11_translate_coords_reply;  /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = same-screen */
+    uint32_t root;              /* bytes 8-11 */
+    uint32_t child;             /* bytes 12-15 */
+    int16_t  root_x;            /* bytes 16-17 */
+    int16_t  root_y;            /* bytes 18-19 */
+    int16_t  win_x;             /* bytes 20-21 */
+    int16_t  win_y;             /* bytes 22-23 */
+    uint16_t state;             /* bytes 24-25 */
+    uint16_t pad0;              /* bytes 26-27 */
+    uint32_t pad1;              /* bytes 28-31 */
+} y11_query_pointer_reply;      /* 32 bytes */
+
+/* ---- events (all exactly 32 bytes; type@0, detail@1, sequence@2-3) -------- */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t window;            /* bytes 4-7 */
+    int16_t  x, y;              /* bytes 8-11 */
+    uint16_t width, height;     /* bytes 12-15 */
+    uint16_t count;             /* bytes 16-17 */
+    uint16_t pad0;              /* bytes 18-19 */
+    uint32_t pad1[3];
+} y11_expose_event;             /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t parent;            /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    int16_t  x, y;              /* bytes 12-15 */
+    uint16_t width, height;     /* bytes 16-19 */
+    uint16_t border_width;      /* bytes 20-21 */
+    uint8_t  override;          /* byte 22 */
+    uint8_t  pad0[1];
+    uint32_t pad1[2];
+} y11_create_notify_event;      /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t pad0[5];
+} y11_destroy_notify_event;     /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint8_t  from_configure;    /* byte 12 */
+    uint8_t  pad0[3];
+    uint32_t pad1[4];
+} y11_unmap_notify_event;       /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint8_t  override;          /* byte 12 */
+    uint8_t  pad0[3];
+    uint32_t pad1[4];
+} y11_map_notify_event;         /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t parent;            /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t pad0[5];
+} y11_map_request_event;        /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t parent;            /* bytes 12-15 */
+    int16_t  x, y;              /* bytes 16-19 */
+    uint8_t  override;          /* byte 20 */
+    uint8_t  pad0[3];
+    uint32_t pad1[2];
+} y11_reparent_notify_event;    /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t above_sibling;     /* bytes 12-15 */
+    int16_t  x, y;              /* bytes 16-19 */
+    uint16_t width, height;     /* bytes 20-23 */
+    uint16_t border_width;      /* bytes 24-25 */
+    uint8_t  override;          /* byte 26 */
+    uint8_t  pad0[1];
+    uint32_t pad1;
+} y11_configure_notify_event;   /* 32 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, stack-mode@1, sequence@2-3 */
+    uint32_t parent;            /* bytes 4-7 */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t sibling;           /* bytes 12-15 */
+    int16_t  x, y;              /* bytes 16-19 */
+    uint16_t width, height;     /* bytes 20-23 */
+    uint16_t border_width;      /* bytes 24-25 */
+    uint16_t value_mask;        /* bytes 26-27 */
+    uint32_t pad0;              /* bytes 28-31 */
+} y11_configure_request_event;  /* 32 bytes */
+
 /* ---- little-endian wire accessors (host byte order independent) --------- */
 
 static inline uint16_t y11_wire_get16(const void *p)
@@ -282,5 +512,26 @@ typedef char y11_wire_chk_get_screen_saver_reply[(sizeof(y11_get_screen_saver_re
 typedef char y11_wire_chk_query_extension_reply[(sizeof(y11_query_extension_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_big_req_enable_reply[(sizeof(y11_big_req_enable_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_error[(sizeof(y11_error) == 32) ? 1 : -1];
+typedef char y11_wire_chk_create_window_req[(sizeof(y11_create_window_req) == 32) ? 1 : -1];
+typedef char y11_wire_chk_change_window_attributes_req[(sizeof(y11_change_window_attributes_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_configure_window_req[(sizeof(y11_configure_window_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_get_window_attributes_reply[(sizeof(y11_get_window_attributes_reply) == 44) ? 1 : -1];
+typedef char y11_wire_chk_get_geometry_reply[(sizeof(y11_get_geometry_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_query_tree_reply[(sizeof(y11_query_tree_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_expose_event[(sizeof(y11_expose_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_create_notify_event[(sizeof(y11_create_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_destroy_notify_event[(sizeof(y11_destroy_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_unmap_notify_event[(sizeof(y11_unmap_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_map_notify_event[(sizeof(y11_map_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_map_request_event[(sizeof(y11_map_request_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_reparent_notify_event[(sizeof(y11_reparent_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_configure_notify_event[(sizeof(y11_configure_notify_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_configure_request_event[(sizeof(y11_configure_request_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_alloc_color_reply[(sizeof(y11_alloc_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_alloc_named_color_reply[(sizeof(y11_alloc_named_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_lookup_color_reply[(sizeof(y11_lookup_color_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_query_colors_reply[(sizeof(y11_query_colors_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_query_pointer_reply[(sizeof(y11_query_pointer_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_translate_coords_reply[(sizeof(y11_translate_coords_reply) == 32) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */

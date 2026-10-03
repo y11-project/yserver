@@ -73,6 +73,88 @@ static int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
     return 0;
 }
 
+/*
+ * QueryPointer (38): a headless server has no pointer, so the reply
+ * parks it at the center of the screen with no buttons pressed.
+ * Clients that poll the pointer (xeyes and friends) stay happy.
+ */
+static int y11_dispatch_query_pointer(struct y11_client *c, const uint8_t *pkt,
+                                      size_t len, size_t data_off)
+{
+    y11_query_pointer_reply rep;
+    struct y11_window *win;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    win = y11_window_get(y11_wire_get32(pkt + data_off));
+    if (win == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW,
+                                y11_wire_get32(pkt + data_off), pkt[0]);
+        return 0;
+    }
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 1;           /* same-screen */
+    y11_wire_put32(&rep.root, Y11_SCREEN_ROOT);
+    y11_wire_put32(&rep.child, 0);     /* None */
+    y11_wire_put16(&rep.root_x, (uint16_t)(Y11_SCREEN_WIDTH / 2));
+    y11_wire_put16(&rep.root_y, (uint16_t)(Y11_SCREEN_HEIGHT / 2));
+    y11_wire_put16(&rep.win_x,
+                   (int16_t)(Y11_SCREEN_WIDTH / 2 - win->abs_x));
+    y11_wire_put16(&rep.win_y,
+                   (int16_t)(Y11_SCREEN_HEIGHT / 2 - win->abs_y));
+    /* state (button mask) stays zero. */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * TranslateCoordinates (40): report a point's position relative to the
+ * destination window's origin, using the cached absolute coordinates.
+ */
+static int y11_dispatch_translate_coords(struct y11_client *c,
+                                         const uint8_t *pkt, size_t len,
+                                         size_t data_off)
+{
+    y11_translate_coords_reply rep;
+    struct y11_window *src, *dst;
+
+    if (len - data_off != 12u)  /* src, dst, src-x, src-y */
+        return y11_dispatch_bad_length(c, pkt[0]);
+    src = y11_window_get(y11_wire_get32(pkt + data_off));
+    dst = y11_window_get(y11_wire_get32(pkt + data_off + 4));
+    if (src == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW,
+                                y11_wire_get32(pkt + data_off), pkt[0]);
+        return 0;
+    }
+    if (dst == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW,
+                                y11_wire_get32(pkt + data_off + 4), pkt[0]);
+        return 0;
+    }
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 1;           /* same-screen: one root for everyone */
+    y11_wire_put32(&rep.child, 0);       /* None */
+    /* Translate into the destination window's coordinate system, whose
+     * origin is the interior top-left (inside the border). */
+    y11_wire_put16(&rep.dst_x,
+                   (int16_t)((int32_t)y11_wire_get16(pkt + data_off + 8) +
+                             src->abs_x + (int32_t)src->border_width -
+                             dst->abs_x - (int32_t)dst->border_width));
+    y11_wire_put16(&rep.dst_y,
+                   (int16_t)((int32_t)y11_wire_get16(pkt + data_off + 10) +
+                             src->abs_y + (int32_t)src->border_width -
+                             dst->abs_y - (int32_t)dst->border_width));
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
 /* ---- individual request handlers ------------------------------------------- */
 
 /*
@@ -246,6 +328,111 @@ static int y11_dispatch_get_screen_saver(struct y11_client *c)
 }
 
 /*
+ * Color requests: y11 renders nothing, so every color resolves to
+ * black (all-zero RGB and pixel 0).  The replies are wire-correct,
+ * which is what lets real headless clients finish their startup.
+ */
+
+/* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
+static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
+                                    size_t len, size_t data_off)
+{
+    y11_alloc_color_reply rep;
+
+    if (len - data_off != 12u)  /* colormap, red, green, blue, pad */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put16(&rep.red, y11_wire_get16(pkt + data_off + 4));
+    y11_wire_put16(&rep.green, y11_wire_get16(pkt + data_off + 6));
+    y11_wire_put16(&rep.blue, y11_wire_get16(pkt + data_off + 8));
+    y11_wire_put32(&rep.pixel, 0);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/* AllocNamedColor (85): colormap, pixel, name length, name. */
+static int y11_dispatch_alloc_named_color(struct y11_client *c,
+                                          const uint8_t *pkt, size_t len,
+                                          size_t data_off)
+{
+    y11_alloc_named_color_reply rep;
+    uint16_t name_len;
+
+    if (len - data_off < 12u)   /* colormap, pixel, name length, pad */
+        return y11_dispatch_bad_length(c, pkt[0]);
+    name_len = y11_wire_get16(pkt + data_off + 8);
+    if (len - data_off - 12u < y11_wire_pad4(name_len))
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put32(&rep.pixel, 0);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * QueryColors (91): 8-byte fixed part (colormap), then one CARD32
+ * pixel per unit of request length; there is no explicit count field.
+ * The reply is followed by one 8-byte RGB item (red, green, blue,
+ * pad) per pixel, all zero: Xlib reads exactly npixels * 8 bytes.
+ */
+static int y11_dispatch_query_colors(struct y11_client *c, const uint8_t *pkt,
+                                     size_t len, size_t data_off)
+{
+    y11_query_colors_reply rep;
+    size_t data_len, n_colors, i;
+
+    if (len - data_off < 4u)    /* colormap */
+        return y11_dispatch_bad_length(c, pkt[0]);
+    data_len = len - data_off - 4u;
+    if (data_len % 4u != 0)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    n_colors = data_len / 4u;
+    if (n_colors > 65535u) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+        return 0;
+    }
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put32(&rep.hdr.length, (uint32_t)n_colors * 2u);  /* 8B items */
+    y11_wire_put16(&rep.n_colors, (uint16_t)n_colors);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    for (i = 0; i < n_colors; i++) {
+        static const uint8_t item[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+        y11_client_send(c, item, sizeof(item));   /* zeroed RGB item */
+    }
+    return 0;
+}
+
+/* LookupColor (92): colormap, name length, name. */
+static int y11_dispatch_lookup_color(struct y11_client *c, const uint8_t *pkt,
+                                     size_t len, size_t data_off)
+{
+    y11_lookup_color_reply rep;
+    uint16_t name_len;
+
+    if (len - data_off < 8u)     /* colormap, name length, pad */
+        return y11_dispatch_bad_length(c, pkt[0]);
+    name_len = y11_wire_get16(pkt + data_off + 4);
+    if (len - data_off - 8u < y11_wire_pad4(name_len))
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    /* exact and screen RGB all stay zero (black). */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
  * Resource lifecycle requests (CreateGC, ChangeGC, FreeGC, CreatePixmap,
  * FreePixmap, ChangeWindowAttributes): y11 renders nothing in phase 1,
  * so these are consumed without a reply; the resource ids they carry are
@@ -291,18 +478,54 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     }
 
     switch (opcode) {
+    case Y11_REQ_CREATE_WINDOW:
+        return y11_window_req_create(c, pkt, len, data_off);
+    case Y11_REQ_CHANGE_WINDOW_ATTRIBUTES:
+        return y11_window_req_change_attributes(c, pkt, len, data_off);
+    case Y11_REQ_GET_WINDOW_ATTRIBUTES:
+        return y11_window_req_get_attributes(c, pkt, len, data_off);
+    case Y11_REQ_DESTROY_WINDOW:
+        return y11_window_req_destroy(c, pkt, len, data_off);
+    case Y11_REQ_DESTROY_SUBWINDOWS:
+        return y11_window_req_destroy_subwindows(c, pkt, len, data_off);
+    case Y11_REQ_REPARENT_WINDOW:
+        return y11_window_req_reparent(c, pkt, len, data_off);
+    case Y11_REQ_MAP_WINDOW:
+        return y11_window_req_map(c, pkt, len, data_off);
+    case Y11_REQ_MAP_SUBWINDOWS:
+        return y11_window_req_map_subwindows(c, pkt, len, data_off);
+    case Y11_REQ_UNMAP_WINDOW:
+        return y11_window_req_unmap(c, pkt, len, data_off);
+    case Y11_REQ_CONFIGURE_WINDOW:
+        return y11_window_req_configure(c, pkt, len, data_off);
+    case Y11_REQ_GET_GEOMETRY:
+        return y11_window_req_get_geometry(c, pkt, len, data_off);
+    case Y11_REQ_QUERY_TREE:
+        return y11_window_req_query_tree(c, pkt, len, data_off);
     case Y11_REQ_INTERN_ATOM:
         return y11_atom_req_intern(c, pkt, len, data_off);
     case Y11_REQ_GET_ATOM_NAME:
         return y11_atom_req_get_name(c, pkt, len, data_off);
     case Y11_REQ_QUERY_EXTENSION:
         return y11_dispatch_query_extension(c, pkt, len, data_off);
+    case Y11_REQ_ALLOC_COLOR:
+        return y11_dispatch_alloc_color(c, pkt, len, data_off);
+    case Y11_REQ_ALLOC_NAMED_COLOR:
+        return y11_dispatch_alloc_named_color(c, pkt, len, data_off);
+    case Y11_REQ_QUERY_COLORS:
+        return y11_dispatch_query_colors(c, pkt, len, data_off);
+    case Y11_REQ_LOOKUP_COLOR:
+        return y11_dispatch_lookup_color(c, pkt, len, data_off);
     case Y11_REQ_LIST_PROPERTIES:
         return y11_dispatch_list_properties(c, pkt, len, data_off);
     case Y11_REQ_GET_PROPERTY:
         return y11_dispatch_get_property(c, pkt, len, data_off);
     case Y11_REQ_GET_INPUT_FOCUS:
         return y11_dispatch_get_input_focus(c);
+    case Y11_REQ_QUERY_POINTER:
+        return y11_dispatch_query_pointer(c, pkt, len, data_off);
+    case Y11_REQ_TRANSLATE_COORDS:
+        return y11_dispatch_translate_coords(c, pkt, len, data_off);
     case Y11_REQ_GET_FONT_PATH:
         return y11_dispatch_get_font_path(c);
     case Y11_REQ_GET_KEYBOARD_CONTROL:
@@ -316,7 +539,27 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_FREE_GC:
     case Y11_REQ_CREATE_PIXMAP:
     case Y11_REQ_FREE_PIXMAP:
-    case Y11_REQ_CHANGE_WINDOW_ATTRIBUTES:
+    case Y11_REQ_FREE_COLORS:
+    case Y11_REQ_STORE_COLORS:
+    case Y11_REQ_STORE_NAMED_COLOR:
+    case Y11_REQ_CHANGE_PROPERTY:
+    case Y11_REQ_DELETE_PROPERTY:
+    case Y11_REQ_CLEAR_AREA:
+    case Y11_REQ_COPY_AREA:
+    case Y11_REQ_COPY_PLANE:
+    case Y11_REQ_POLY_POINT:
+    case Y11_REQ_POLY_LINE:
+    case Y11_REQ_POLY_SEGMENT:
+    case Y11_REQ_POLY_RECTANGLE:
+    case Y11_REQ_POLY_ARC:
+    case Y11_REQ_FILL_POLY:
+    case Y11_REQ_POLY_FILL_RECTANGLE:
+    case Y11_REQ_POLY_FILL_ARC:
+    case Y11_REQ_PUT_IMAGE:
+    case Y11_REQ_POLY_TEXT8:
+    case Y11_REQ_POLY_TEXT16:
+    case Y11_REQ_IMAGE_TEXT8:
+    case Y11_REQ_IMAGE_TEXT16:
         return y11_dispatch_accept_resource(c, pkt, len, data_off);
     case Y11_REQ_NO_OPERATION:
         return 0;               /* no reply */
