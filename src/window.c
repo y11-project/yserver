@@ -49,6 +49,68 @@ struct y11_window *y11_window_get(yid_t id)
     return y11_resource_get(id, Y11_RESOURCE_WINDOW);
 }
 
+/*
+ * (Re)allocate a window's backing pixel buffer for the current
+ * geometry, preserving the top-left content on resize.  InputOnly
+ * windows carry no buffer.  Returns -1 on allocation failure.
+ */
+int y11_window_sync_drawable(struct y11_window *win)
+{
+    size_t stride, size;
+    uint32_t *pixels;
+
+    win->drawable.id = win->id;
+    win->drawable.type = Y11_DRAWABLE_WINDOW;
+    win->drawable.width = win->width;
+    win->drawable.height = win->height;
+    win->drawable.depth = win->depth;
+    win->drawable.bpp = 32;
+    win->drawable.stride = 0;
+
+    if (win->window_class == Y11_WINDOW_CLASS_INPUT_ONLY ||
+        win->width == 0 || win->height == 0) {
+        y11_window_free_drawable(win);
+        return 0;
+    }
+
+    stride = (size_t)win->width * 4u;
+    if (stride > (size_t)-1 / win->height)
+        return -1;
+    size = stride * (size_t)win->height;
+
+    pixels = calloc(1, size);
+    if (pixels == NULL)
+        return -1;
+
+    /* Preserve the overlapping content on resize. */
+    if (win->drawable.pixels != NULL) {
+        uint16_t old_w = (uint16_t)(win->drawable.stride / 4u);
+        uint16_t copy_w = old_w < win->width ? old_w : win->width;
+        uint16_t old_h = win->drawable.height;
+        uint16_t copy_h = old_h < win->height ? old_h : win->height;
+        uint16_t row;
+
+        for (row = 0; row < copy_h; row++) {
+            memcpy((uint8_t *)pixels + (size_t)row * stride,
+                   (uint8_t *)win->drawable.pixels +
+                       (size_t)row * win->drawable.stride,
+                   (size_t)copy_w * 4u);
+        }
+        free(win->drawable.pixels);
+    }
+
+    win->drawable.pixels = pixels;
+    win->drawable.stride = stride;
+    return 0;
+}
+
+void y11_window_free_drawable(struct y11_window *win)
+{
+    free(win->drawable.pixels);
+    win->drawable.pixels = NULL;
+    win->drawable.stride = 0;
+}
+
 /* The exclusive event-mask bits: only one client may select each. */
 static uint32_t y11_exclusive_mask_bits(void)
 {
@@ -379,6 +441,7 @@ static void y11_window_free_tree(struct y11_window *win)
         child = next;
     }
     y11_window_detach(win);
+    y11_window_free_drawable(win);
     y11_window_free_subs(win);
     y11_resource_remove(win->id);
     free(win);
@@ -392,6 +455,7 @@ static void y11_window_destroy_tree(struct y11_window *win)
 
     y11_event_send_destroy(win);
     y11_window_detach(win);
+    y11_window_free_drawable(win);
     y11_window_free_subs(win);
     y11_resource_remove(win->id);
     free(win);
@@ -420,6 +484,11 @@ int y11_window_init(void)
     root->background_pixel = 0;
 
     if (y11_resource_add(root->id, Y11_RESOURCE_WINDOW, root) != 0) {
+        free(root);
+        return -1;
+    }
+    if (y11_window_sync_drawable(root) != 0) {
+        y11_resource_remove(root->id);
         free(root);
         return -1;
     }
@@ -686,6 +755,12 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
         return 0;
     }
+    if (y11_window_sync_drawable(win) != 0) {
+        y11_resource_remove(win->id);
+        free(win);
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
+        return 0;
+    }
     y11_window_attach_bottom(parent, win);
     y11_window_recompute_abs(win);
 
@@ -695,6 +770,7 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
             /* Cannot happen for a fresh window, but stay defensive. */
             y11_window_detach(win);
             y11_resource_remove(win->id);
+            y11_window_free_drawable(win);
             y11_window_free_subs(win);
             free(win);
             y11_dispatch_send_error(c, err, 0, pkt[0]);
@@ -1065,6 +1141,12 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
         win->border_width = (uint16_t)border_width;
     if ((value_mask & (Y11_CW_X | Y11_CW_Y | Y11_CW_BORDER_WIDTH)) != 0)
         y11_window_recompute_abs(win);
+    if ((value_mask & (Y11_CW_WIDTH | Y11_CW_HEIGHT)) != 0) {
+        if (y11_window_sync_drawable(win) != 0) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
+            return 0;
+        }
+    }
 
     /* Restack. */
     if ((value_mask & Y11_CW_STACK_MODE) != 0) {

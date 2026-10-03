@@ -388,6 +388,9 @@ struct y11_window {
     uint32_t            all_event_masks;    /* bitwise OR of all client masks */
     struct y11_event_sub *event_subs;       /* per-client event mask list */
     struct y11_client  *substructure_redirect_client;   /* active WM client */
+
+    /* Backing pixel buffer (InputOnly windows have none) */
+    y11_drawable_t      drawable;
 };
 
 /* ---- top-level server object ------------------------------------------- */
@@ -430,6 +433,10 @@ void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
 int  y11_window_init(void);
 void y11_window_shutdown(void);
 struct y11_window *y11_window_get(yid_t id);
+
+/* Backing-buffer management (create, resize, free). */
+int  y11_window_sync_drawable(struct y11_window *win);
+void y11_window_free_drawable(struct y11_window *win);
 
 int  y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
                            size_t len, size_t data_off);
