@@ -303,6 +303,7 @@ enum y11_error_code {
     Y11_ERR_BAD_COLORMAP       = 12,
     Y11_ERR_BAD_GCONTEXT       = 13,
     Y11_ERR_BAD_ID_CHOICE      = 14,
+    Y11_ERR_BAD_NAME           = 15,
     Y11_ERR_BAD_LENGTH         = 16,
     Y11_ERR_BAD_IMPLEMENTATION = 17
 };

@@ -332,26 +332,132 @@ static int y11_dispatch_get_screen_saver(struct y11_client *c)
 }
 
 /*
- * Color requests: y11 renders nothing, so every color resolves to
- * black (all-zero RGB and pixel 0).  The replies are wire-correct,
- * which is what lets real headless clients finish their startup.
+ * Color requests: resolve colors through the X11 color-name grammar
+ * (#RGB/#RRGGBB/... hex forms plus a small table of common names) and
+ * pack pixels through the screen's TrueColor visual (red 0xFF0000,
+ * green 0xFF00, blue 0xFF).
  */
+
+/* Scale an n-hex-digit component to the full 16-bit range. */
+static uint16_t y11_color_scale(uint32_t v, unsigned digits)
+{
+    switch (digits) {
+    case 1:  return (uint16_t)(v * 0x1111u);
+    case 2:  return (uint16_t)(v * 0x101u);
+    case 3:  return (uint16_t)((v << 4) | (v >> 8));
+    default: return (uint16_t)v;                /* 4 digits */
+    }
+}
+
+static int y11_color_hex(const char *name, size_t len, unsigned digits,
+                         uint16_t *red, uint16_t *green, uint16_t *blue)
+{
+    uint32_t r = 0, g = 0, b = 0;
+    size_t i;
+
+    if (len != 1u + digits * 3u)
+        return -1;
+    for (i = 0; i < digits; i++) {
+        unsigned k;
+        for (k = 0; k < 3; k++) {
+            char ch = name[1 + k * digits + i];
+            uint32_t d;
+
+            if (ch >= '0' && ch <= '9')
+                d = (uint32_t)(ch - '0');
+            else if (ch >= 'a' && ch <= 'f')
+                d = (uint32_t)(ch - 'a' + 10);
+            else if (ch >= 'A' && ch <= 'F')
+                d = (uint32_t)(ch - 'A' + 10);
+            else
+                return -1;
+            if (k == 0)
+                r = r * 16u + d;
+            else if (k == 1)
+                g = g * 16u + d;
+            else
+                b = b * 16u + d;
+        }
+    }
+    *red = y11_color_scale(r, digits);
+    *green = y11_color_scale(g, digits);
+    *blue = y11_color_scale(b, digits);
+    return 0;
+}
+
+/*
+ * Parse an X11 color name.  Returns 0 on success and fills the RGB
+ * triple in the 16-bit range.
+ */
+static int y11_parse_color(const char *name, size_t len,
+                           uint16_t *red, uint16_t *green, uint16_t *blue)
+{
+    static const struct {
+        const char *name;
+        uint16_t r, g, b;
+    } table[] = {
+        { "black",   0,     0,     0     },
+        { "white",   65535, 65535, 65535 },
+        { "red",     65535, 0,     0     },
+        { "green",   0,     65535, 0     },
+        { "blue",    0,     0,     65535 },
+        { "cyan",    0,     65535, 65535 },
+        { "magenta", 65535, 0,     65535 },
+        { "yellow",  65535, 65535, 0     },
+        { "gray",    0xb8b8, 0xb8b8, 0xb8b8 },
+        { "grey",    0xb8b8, 0xb8b8, 0xb8b8 }
+    };
+    size_t i;
+    unsigned digits;
+
+    if (len > 0 && name[0] == '#') {
+        for (digits = 1; digits <= 4; digits++) {
+            if (len == 1u + digits * 3u &&
+                y11_color_hex(name, len, digits, red, green, blue) == 0)
+                return 0;
+        }
+        return -1;
+    }
+    for (i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        if (strlen(table[i].name) == len &&
+            memcmp(table[i].name, name, len) == 0) {
+            *red = table[i].r;
+            *green = table[i].g;
+            *blue = table[i].b;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* Pack a 16-bit RGB triple into the screen's 24-bit pixel value. */
+static uint32_t y11_color_pixel(uint16_t red, uint16_t green, uint16_t blue)
+{
+    return ((uint32_t)(red >> 8) << 16) |
+           ((uint32_t)(green >> 8) << 8) |
+           (uint32_t)(blue >> 8);
+}
 
 /* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
 static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off)
 {
     y11_alloc_color_reply rep;
+    uint16_t red, green, blue;
 
     if (len - data_off != 12u)  /* colormap, red, green, blue, pad */
         return y11_dispatch_bad_length(c, pkt[0]);
 
+    red = y11_wire_get16(pkt + data_off + 4);
+    green = y11_wire_get16(pkt + data_off + 6);
+    blue = y11_wire_get16(pkt + data_off + 8);
+
     memset(&rep, 0, sizeof(rep));
     rep.hdr.type = 1;           /* X_Reply */
-    y11_wire_put16(&rep.red, y11_wire_get16(pkt + data_off + 4));
-    y11_wire_put16(&rep.green, y11_wire_get16(pkt + data_off + 6));
-    y11_wire_put16(&rep.blue, y11_wire_get16(pkt + data_off + 8));
-    y11_wire_put32(&rep.pixel, 0);
+    y11_wire_put16(&rep.red, red);
+    y11_wire_put16(&rep.green, green);
+    y11_wire_put16(&rep.blue, blue);
+    y11_wire_put32(&rep.pixel, y11_color_pixel(red, green, blue));
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
@@ -363,7 +469,7 @@ static int y11_dispatch_alloc_named_color(struct y11_client *c,
                                           size_t data_off)
 {
     y11_alloc_named_color_reply rep;
-    uint16_t name_len;
+    uint16_t name_len, red, green, blue;
 
     if (len - data_off < 12u)   /* colormap, pixel, name length, pad */
         return y11_dispatch_bad_length(c, pkt[0]);
@@ -371,9 +477,21 @@ static int y11_dispatch_alloc_named_color(struct y11_client *c,
     if (len - data_off - 12u < y11_wire_pad4(name_len))
         return y11_dispatch_bad_length(c, pkt[0]);
 
+    if (y11_parse_color((const char *)pkt + data_off + 12, name_len,
+                        &red, &green, &blue) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_NAME, 0, pkt[0]);
+        return 0;
+    }
+
     memset(&rep, 0, sizeof(rep));
     rep.hdr.type = 1;           /* X_Reply */
-    y11_wire_put32(&rep.pixel, 0);
+    y11_wire_put32(&rep.pixel, y11_color_pixel(red, green, blue));
+    y11_wire_put16(&rep.exact_red, red);
+    y11_wire_put16(&rep.exact_green, green);
+    y11_wire_put16(&rep.exact_blue, blue);
+    y11_wire_put16(&rep.screen_red, red);
+    y11_wire_put16(&rep.screen_green, green);
+    y11_wire_put16(&rep.screen_blue, blue);
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
@@ -428,9 +546,24 @@ static int y11_dispatch_lookup_color(struct y11_client *c, const uint8_t *pkt,
     if (len - data_off - 8u < y11_wire_pad4(name_len))
         return y11_dispatch_bad_length(c, pkt[0]);
 
-    memset(&rep, 0, sizeof(rep));
-    rep.hdr.type = 1;           /* X_Reply */
-    /* exact and screen RGB all stay zero (black). */
+    {
+        uint16_t red, green, blue;
+
+        if (y11_parse_color((const char *)pkt + data_off + 8, name_len,
+                            &red, &green, &blue) != 0) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_NAME, 0, pkt[0]);
+            return 0;
+        }
+
+        memset(&rep, 0, sizeof(rep));
+        rep.hdr.type = 1;       /* X_Reply */
+        y11_wire_put16(&rep.exact_red, red);
+        y11_wire_put16(&rep.exact_green, green);
+        y11_wire_put16(&rep.exact_blue, blue);
+        y11_wire_put16(&rep.screen_red, red);
+        y11_wire_put16(&rep.screen_green, green);
+        y11_wire_put16(&rep.screen_blue, blue);
+    }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
