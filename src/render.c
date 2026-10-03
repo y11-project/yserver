@@ -176,8 +176,8 @@ static y11_drawable_t *y11_render_validate(struct y11_client *c,
  *   1     70        opcode
  *   1     unused
  *   2     request length
- *   4     gc
  *   4     drawable
+ *   4     gc
  *   n     rectangles (8 bytes each: x, y, width, height)
  */
 int y11_render_req_poly_fill_rectangle(struct y11_client *c,
@@ -196,9 +196,9 @@ int y11_render_req_poly_fill_rectangle(struct y11_client *c,
         goto badlength;
     nrects = avail / 8u;
 
-    gc = y11_render_gc_lookup(y11_wire_get32(body + 0));
-    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 0),
-                            y11_wire_get32(body + 4));
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
+    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
+                            y11_wire_get32(body + 0));
     if (d == NULL)
         return 0;
 
