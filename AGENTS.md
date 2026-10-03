@@ -6,9 +6,9 @@ Guidance for AI coding agents working in this repository.
 
 `y11` (repo: `yserver`) is an X11-compatible display server daemon for
 The Y11 Project, written in strict ISO C99 for portable POSIX (Linux
-glibc/musl and FreeBSD). Phase 1 added the headless protocol engine and
-handshake; phase 2 (branch `phase-2-window-tree`) adds the window tree
-hierarchy and WM substructure redirection.
+glibc/musl and FreeBSD). It implements the wire protocol engine,
+connection handshake, the window tree hierarchy and WM substructure
+redirection, with no rendering yet.
 
 ## Build
 
@@ -43,6 +43,7 @@ hierarchy and WM substructure redirection.
 - Conventional Commits, subject only, no body: `feat: ...`, `fix: ...`,
   `docs: ...`.
 - Keep commits small; every commit must build on its own.
+- Work directly on `master`. Do not create extra branches.
 
 ## Verification on this host
 
