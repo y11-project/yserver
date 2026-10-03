@@ -54,6 +54,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
         fprintf(stderr, "y11: client %d: disconnect\n", c->slot);
     /* Release window event subscriptions and redirect ownership. */
     y11_events_purge_client(c);
+    /* Per the X11 protocol, a disconnect destroys the client's windows. */
+    y11_window_destroy_owned(c);
     if (c->fd >= 0)
         close(c->fd);
     free(c->in_buf);

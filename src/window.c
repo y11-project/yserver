@@ -30,6 +30,8 @@
 
 static struct y11_window *y11_root;     /* the screen's root window */
 
+static void y11_window_destroy_tree(struct y11_window *win);
+
 /* ---- small helpers --------------------------------------------------------- */
 
 static unsigned y11_popcount32(uint32_t v)
@@ -320,6 +322,35 @@ void y11_events_purge_client(struct y11_client *c)
 
     if (root != NULL)
         y11_window_purge_tree(root, c);
+}
+
+/*
+ * Recursively destroy windows owned by client `c` (called on
+ * disconnect, after its subscriptions are purged).  Destroying a
+ * window takes its whole subtree, whatever the owners.
+ */
+static void y11_window_destroy_owned_tree(struct y11_window *win,
+                                          struct y11_client *c)
+{
+    struct y11_window *child = win->first_child;
+
+    while (child != NULL) {
+        struct y11_window *next = child->next_sibling;
+
+        if (child->owner == c)
+            y11_window_destroy_tree(child);
+        else
+            y11_window_destroy_owned_tree(child, c);
+        child = next;
+    }
+}
+
+void y11_window_destroy_owned(struct y11_client *c)
+{
+    struct y11_window *root = y11_window_get(Y11_SCREEN_ROOT);
+
+    if (root != NULL)
+        y11_window_destroy_owned_tree(root, c);
 }
 
 /* ---- lifecycle ------------------------------------------------------------------------ */

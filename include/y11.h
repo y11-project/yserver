@@ -365,6 +365,7 @@ int  y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
                                  size_t len, size_t data_off);
 int  y11_window_req_query_tree(struct y11_client *c, const uint8_t *pkt,
                                size_t len, size_t data_off);
+void y11_window_destroy_owned(struct y11_client *c);
 
 /* ---- src/events.c --------------------------------------------------------- */
 
