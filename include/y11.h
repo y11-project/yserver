@@ -467,6 +467,9 @@ void y11_window_destroy_owned(struct y11_client *c);
 
 /* ---- src/events.c --------------------------------------------------------- */
 
+/* Stamp the target's sequence into bytes 2-3 and queue the event. */
+void y11_event_dispatch32(struct y11_client *target, void *event, size_t len);
+
 void y11_event_send_create(struct y11_window *win);
 void y11_event_send_destroy(struct y11_window *win);
 void y11_event_send_map(struct y11_window *win);
@@ -532,8 +535,13 @@ int  y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off);
 int  y11_render_req_get_image(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off);
-void y11_render_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
-                             uint32_t w, uint32_t h);
+
+/* ---- src/damage.c ------------------------------------------------------------ */
+
+void y11_damage_mapped(struct y11_window *win, int32_t x, int32_t y,
+                       uint32_t w, uint32_t h);
+void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
+                      uint32_t w, uint32_t h);
 
 /* ---- misc ------------------------------------------------------------------------ */
 

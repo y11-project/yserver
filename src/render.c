@@ -211,6 +211,9 @@ int y11_render_req_poly_fill_rectangle(struct y11_client *c,
                                 (int16_t)y11_wire_get16(r + 4),
                                 (int16_t)y11_wire_get16(r + 6));
     }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, 0, 0, d->width, d->height);
     return 0;                   /* no reply */
 
 badlength:
@@ -326,6 +329,9 @@ int y11_render_req_copy_area(struct y11_client *c, const uint8_t *pkt,
         }
     }
     free(snap);
+
+    if (dst->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(dst, dx, dy, (uint32_t)w, (uint32_t)h);
     return 0;                   /* no reply */
 
 badlength:
@@ -453,6 +459,9 @@ int y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
         }
         free(acc);
     }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, dst_x, dst_y, width, height);
     return 0;                   /* no reply */
 
 badalloc:

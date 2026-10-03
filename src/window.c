@@ -594,7 +594,7 @@ static int y11_window_do_map(struct y11_window *win)
     y11_window_propagate_map_state(win,
                                    win->map_state == Y11_MAP_STATE_VIEWABLE);
     if (win->map_state == Y11_MAP_STATE_VIEWABLE)
-        y11_event_send_expose(win);
+        y11_damage_mapped(win, 0, 0, win->width, win->height);
     return 0;
 }
 

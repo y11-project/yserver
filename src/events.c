@@ -20,8 +20,7 @@
  * Stamp the target client's sequence number into bytes 2-3 and queue the
  * 32-byte event into its output ring buffer.
  */
-static void y11_event_dispatch32(struct y11_client *target, void *event,
-                                 size_t len)
+void y11_event_dispatch32(struct y11_client *target, void *event, size_t len)
 {
     uint8_t *b = (uint8_t *)event;
 
