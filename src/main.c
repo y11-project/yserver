@@ -313,6 +313,12 @@ int main(int argc, char **argv)
     if (y11_server_init(&srv, display) != 0)
         return EXIT_FAILURE;
 
+    if (y11_resource_init() != 0) {
+        fprintf(stderr, "y11: cannot initialize resource table\n");
+        y11_server_shutdown(&srv);
+        return EXIT_FAILURE;
+    }
+
     if (y11_atom_init() != 0) {
         fprintf(stderr, "y11: cannot initialize atom table\n");
         y11_server_shutdown(&srv);
@@ -326,5 +332,6 @@ int main(int argc, char **argv)
 
     y11_server_shutdown(&srv);
     y11_atom_shutdown();
+    y11_resource_shutdown();
     return EXIT_SUCCESS;
 }

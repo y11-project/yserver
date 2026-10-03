@@ -13,6 +13,7 @@
 #ifndef Y11_H
 #define Y11_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -48,6 +49,102 @@ typedef uint32_t yid_t;
 #define Y11_BIGREQ_NAME       "BIG-REQUESTS"
 #define Y11_BIGREQ_EXT_OPCODE 128u      /* major opcode handed out for the extension */
 
+/* ---- event type codes (numeric values per the X11 wire standard) ------- */
+
+enum y11_event_type {
+    Y11_EVT_EXPOSE              = 12,
+    Y11_EVT_CREATE_NOTIFY      = 16,
+    Y11_EVT_DESTROY_NOTIFY     = 17,
+    Y11_EVT_UNMAP_NOTIFY       = 18,
+    Y11_EVT_MAP_NOTIFY         = 19,
+    Y11_EVT_MAP_REQUEST        = 20,
+    Y11_EVT_REPARENT_NOTIFY    = 21,
+    Y11_EVT_CONFIGURE_NOTIFY   = 22,
+    Y11_EVT_CONFIGURE_REQUEST  = 23
+};
+
+/* ---- event mask bits (numeric values per the X11 wire standard) -------- */
+
+enum y11_event_mask_bit {
+    Y11_MASK_KEY_PRESS             = 1u << 0,
+    Y11_MASK_KEY_RELEASE           = 1u << 1,
+    Y11_MASK_BUTTON_PRESS          = 1u << 2,
+    Y11_MASK_BUTTON_RELEASE        = 1u << 3,
+    Y11_MASK_ENTER_WINDOW          = 1u << 4,
+    Y11_MASK_LEAVE_WINDOW          = 1u << 5,
+    Y11_MASK_POINTER_MOTION        = 1u << 6,
+    Y11_MASK_POINTER_MOTION_HINT   = 1u << 7,
+    Y11_MASK_BUTTON1_MOTION        = 1u << 8,
+    Y11_MASK_BUTTON2_MOTION        = 1u << 9,
+    Y11_MASK_BUTTON3_MOTION        = 1u << 10,
+    Y11_MASK_BUTTON4_MOTION        = 1u << 11,
+    Y11_MASK_BUTTON5_MOTION        = 1u << 12,
+    Y11_MASK_BUTTON_MOTION         = 1u << 13,
+    Y11_MASK_KEYMAP_STATE          = 1u << 14,
+    Y11_MASK_EXPOSURE              = 1u << 15,
+    Y11_MASK_VISIBILITY_CHANGE     = 1u << 16,
+    Y11_MASK_STRUCTURE_NOTIFY      = 1u << 17,
+    Y11_MASK_RESIZE_REDIRECT       = 1u << 18,
+    Y11_MASK_SUBSTRUCTURE_NOTIFY   = 1u << 19,
+    Y11_MASK_SUBSTRUCTURE_REDIRECT = 1u << 20,
+    Y11_MASK_FOCUS_CHANGE          = 1u << 21,
+    Y11_MASK_PROPERTY_CHANGE       = 1u << 22,
+    Y11_MASK_COLORMAP_CHANGE       = 1u << 23,
+    Y11_MASK_OWNER_GRAB_BUTTON     = 1u << 24,
+    Y11_MASK_ALL_VALID             = 0x01FFFFFFu
+};
+
+/* ---- ChangeWindowAttributes value-mask bits (X11 wire values) ---------- */
+
+enum y11_cwa_bit {
+    Y11_CWA_BACK_PIXMAP       = 1u << 0,
+    Y11_CWA_BACK_PIXEL        = 1u << 1,
+    Y11_CWA_BORDER_PIXMAP     = 1u << 2,
+    Y11_CWA_BORDER_PIXEL      = 1u << 3,
+    Y11_CWA_BIT_GRAVITY       = 1u << 4,
+    Y11_CWA_WIN_GRAVITY       = 1u << 5,
+    Y11_CWA_BACKING_STORE     = 1u << 6,
+    Y11_CWA_BACKING_PLANES    = 1u << 7,
+    Y11_CWA_BACKING_PIXEL     = 1u << 8,
+    Y11_CWA_OVERRIDE_REDIRECT = 1u << 9,
+    Y11_CWA_SAVE_UNDER        = 1u << 10,
+    Y11_CWA_EVENT_MASK        = 1u << 11,
+    Y11_CWA_DONT_PROPAGATE    = 1u << 12,
+    Y11_CWA_COLORMAP          = 1u << 13,
+    Y11_CWA_CURSOR            = 1u << 14,
+    Y11_CWA_ALL_VALID         = 0x00007FFFu
+};
+
+/* ---- ConfigureWindow value-mask bits (X11 wire values) ----------------- */
+
+enum y11_cw_bit {
+    Y11_CW_X            = 1u << 0,
+    Y11_CW_Y            = 1u << 1,
+    Y11_CW_WIDTH        = 1u << 2,
+    Y11_CW_HEIGHT       = 1u << 3,
+    Y11_CW_BORDER_WIDTH = 1u << 4,
+    Y11_CW_SIBLING      = 1u << 5,
+    Y11_CW_STACK_MODE   = 1u << 6,
+    Y11_CW_ALL_VALID    = 0x0000007Fu
+};
+
+/* window restack modes (X11 wire values) */
+enum y11_stack_mode {
+    Y11_STACK_ABOVE     = 0,
+    Y11_STACK_BELOW     = 1,
+    Y11_STACK_TOP_IF    = 2,
+    Y11_STACK_BOTTOM_IF = 3,
+    Y11_STACK_OPPOSITE  = 4
+};
+
+/* ---- resources ---------------------------------------------------------- */
+
+enum y11_resource_type {
+    Y11_RESOURCE_WINDOW = 1,
+    Y11_RESOURCE_PIXMAP = 2,
+    Y11_RESOURCE_GC     = 3
+};
+
 /* ---- screen geometry (1920x1080 at ~96 dpi) ---------------------------- */
 
 #define Y11_SCREEN_WIDTH       1920u
@@ -67,25 +164,34 @@ typedef uint32_t yid_t;
 /* ---- request opcodes (numeric values per the X11 wire standard) -------- */
 
 enum y11_req_opcode {
-    Y11_REQ_CREATE_WINDOW        = 1,
+    Y11_REQ_CREATE_WINDOW            = 1,
     Y11_REQ_CHANGE_WINDOW_ATTRIBUTES = 2,
-    Y11_REQ_INTERN_ATOM          = 16,
-    Y11_REQ_GET_ATOM_NAME        = 17,
-    Y11_REQ_GET_PROPERTY         = 20,
-    Y11_REQ_LIST_PROPERTIES      = 21,
-    Y11_REQ_SET_SELECTION_OWNER  = 22,
-    Y11_REQ_GET_INPUT_FOCUS      = 43,
-    Y11_REQ_GET_FONT_PATH        = 52,
-    Y11_REQ_CREATE_PIXMAP        = 53,
-    Y11_REQ_FREE_PIXMAP          = 54,
-    Y11_REQ_CREATE_GC            = 55,
-    Y11_REQ_CHANGE_GC            = 56,
-    Y11_REQ_FREE_GC              = 60,
-    Y11_REQ_QUERY_EXTENSION      = 98,
-    Y11_REQ_GET_KEYBOARD_CONTROL = 103,
-    Y11_REQ_GET_POINTER_CONTROL  = 106,
-    Y11_REQ_GET_SCREEN_SAVER     = 108,
-    Y11_REQ_NO_OPERATION         = 127
+    Y11_REQ_GET_WINDOW_ATTRIBUTES    = 3,
+    Y11_REQ_DESTROY_WINDOW           = 4,
+    Y11_REQ_DESTROY_SUBWINDOWS       = 5,
+    Y11_REQ_REPARENT_WINDOW          = 7,
+    Y11_REQ_MAP_WINDOW               = 8,
+    Y11_REQ_MAP_SUBWINDOWS           = 9,
+    Y11_REQ_UNMAP_WINDOW             = 10,
+    Y11_REQ_GET_GEOMETRY             = 14,
+    Y11_REQ_QUERY_TREE               = 15,
+    Y11_REQ_INTERN_ATOM              = 16,
+    Y11_REQ_GET_ATOM_NAME            = 17,
+    Y11_REQ_GET_PROPERTY             = 20,
+    Y11_REQ_LIST_PROPERTIES          = 21,
+    Y11_REQ_SET_SELECTION_OWNER      = 22,
+    Y11_REQ_GET_INPUT_FOCUS          = 43,
+    Y11_REQ_GET_FONT_PATH            = 52,
+    Y11_REQ_CREATE_PIXMAP            = 53,
+    Y11_REQ_FREE_PIXMAP              = 54,
+    Y11_REQ_CREATE_GC                = 55,
+    Y11_REQ_CHANGE_GC                = 56,
+    Y11_REQ_FREE_GC                  = 60,
+    Y11_REQ_QUERY_EXTENSION          = 98,
+    Y11_REQ_GET_KEYBOARD_CONTROL     = 103,
+    Y11_REQ_GET_POINTER_CONTROL      = 106,
+    Y11_REQ_GET_SCREEN_SAVER         = 108,
+    Y11_REQ_NO_OPERATION             = 127
 };
 
 /* ---- error codes (numeric values per the X11 wire standard) ------------ */
@@ -93,8 +199,18 @@ enum y11_req_opcode {
 enum y11_error_code {
     Y11_ERR_BAD_REQUEST        = 1,
     Y11_ERR_BAD_VALUE          = 2,
+    Y11_ERR_BAD_WINDOW         = 3,
+    Y11_ERR_BAD_PIXMAP         = 4,
     Y11_ERR_BAD_ATOM           = 5,
+    Y11_ERR_BAD_CURSOR         = 6,
+    Y11_ERR_BAD_FONT           = 7,
+    Y11_ERR_BAD_MATCH          = 8,
+    Y11_ERR_BAD_DRAWABLE       = 9,
+    Y11_ERR_BAD_ACCESS         = 10,
     Y11_ERR_BAD_ALLOC          = 11,
+    Y11_ERR_BAD_COLORMAP       = 12,
+    Y11_ERR_BAD_GCONTEXT       = 13,
+    Y11_ERR_BAD_ID_CHOICE      = 14,
     Y11_ERR_BAD_LENGTH         = 16,
     Y11_ERR_BAD_IMPLEMENTATION = 17
 };
@@ -125,6 +241,62 @@ struct y11_client {
     uint8_t *out_buf;           /* pending reply data */
     size_t out_len;             /* unsent bytes in out_buf */
     size_t out_cap;             /* allocated size of out_buf */
+};
+
+/* ---- window map states and classes (X11 wire values) ------------------- */
+
+typedef enum {
+    Y11_MAP_STATE_UNMAPPED   = 0,
+    Y11_MAP_STATE_UNVIEWABLE = 1,
+    Y11_MAP_STATE_VIEWABLE   = 2
+} y11_map_state_t;
+
+typedef enum {
+    Y11_WINDOW_CLASS_COPY_FROM_PARENT = 0,
+    Y11_WINDOW_CLASS_INPUT_OUTPUT     = 1,
+    Y11_WINDOW_CLASS_INPUT_ONLY       = 2
+} y11_window_class_t;
+
+/* ---- per-client event subscription -------------------------------------- */
+
+struct y11_event_sub {
+    struct y11_client    *client;   /* subscribed client */
+    uint32_t              mask;     /* selected event mask bits */
+    struct y11_event_sub *next;
+};
+
+/* ---- windows ------------------------------------------------------------ */
+
+struct y11_window {
+    yid_t               id;
+    struct y11_client  *owner;
+    struct y11_window  *parent;
+    struct y11_window  *first_child;    /* bottom of stacking order */
+    struct y11_window  *last_child;     /* top of stacking order */
+    struct y11_window  *prev_sibling;
+    struct y11_window  *next_sibling;
+
+    /* Geometry relative to parent */
+    int16_t             x, y;
+    uint16_t            width, height;
+    uint16_t            border_width;
+
+    /* Absolute screen-space coordinates */
+    int32_t             abs_x, abs_y;
+
+    /* Attributes */
+    uint8_t             depth;
+    yid_t               visual_id;
+    y11_window_class_t  window_class;
+    y11_map_state_t     map_state;
+    bool                override_redirect;
+    uint32_t            background_pixel;
+    uint32_t            border_pixel;
+
+    /* Event subscriptions */
+    uint32_t            all_event_masks;    /* bitwise OR of all client masks */
+    struct y11_event_sub *event_subs;       /* per-client event mask list */
+    struct y11_client  *substructure_redirect_client;   /* active WM client */
 };
 
 /* ---- top-level server object ------------------------------------------- */
@@ -161,6 +333,64 @@ int  y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len);
 void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len);
 void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
                              uint32_t resource_id, uint8_t major_opcode);
+
+/* ---- src/window.c -------------------------------------------------------- */
+
+int  y11_window_init(void);
+void y11_window_shutdown(void);
+struct y11_window *y11_window_get(yid_t id);
+
+int  y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
+                           size_t len, size_t data_off);
+int  y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
+                                      size_t len, size_t data_off);
+int  y11_window_req_get_attributes(struct y11_client *c, const uint8_t *pkt,
+                                   size_t len, size_t data_off);
+int  y11_window_req_destroy(struct y11_client *c, const uint8_t *pkt,
+                            size_t len, size_t data_off);
+int  y11_window_req_destroy_subwindows(struct y11_client *c, const uint8_t *pkt,
+                                       size_t len, size_t data_off);
+int  y11_window_req_reparent(struct y11_client *c, const uint8_t *pkt,
+                             size_t len, size_t data_off);
+int  y11_window_req_map(struct y11_client *c, const uint8_t *pkt,
+                        size_t len, size_t data_off);
+int  y11_window_req_map_subwindows(struct y11_client *c, const uint8_t *pkt,
+                                   size_t len, size_t data_off);
+int  y11_window_req_unmap(struct y11_client *c, const uint8_t *pkt,
+                          size_t len, size_t data_off);
+int  y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
+int  y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off);
+int  y11_window_req_query_tree(struct y11_client *c, const uint8_t *pkt,
+                               size_t len, size_t data_off);
+
+/* ---- src/events.c --------------------------------------------------------- */
+
+void y11_event_send_create(struct y11_window *win);
+void y11_event_send_destroy(struct y11_window *win);
+void y11_event_send_map(struct y11_window *win);
+void y11_event_send_unmap(struct y11_window *win, int from_configure);
+void y11_event_send_reparent(struct y11_window *win,
+                             struct y11_window *old_parent);
+void y11_event_send_configure(struct y11_window *win);
+void y11_event_send_expose(struct y11_window *win);
+void y11_event_send_map_request(struct y11_window *win);
+void y11_event_send_configure_request(struct y11_window *win,
+                                      uint32_t value_mask,
+                                      int32_t x, int32_t y,
+                                      uint32_t width, uint32_t height,
+                                      uint32_t border_width,
+                                      uint32_t sibling, uint8_t stack_mode);
+void y11_events_purge_client(struct y11_client *c);
+
+/* ---- src/resource.c -------------------------------------------------------- */
+
+int   y11_resource_init(void);
+void  y11_resource_shutdown(void);
+int   y11_resource_add(yid_t id, int type, void *ptr);
+void *y11_resource_get(yid_t id, int type);
+void  y11_resource_remove(yid_t id);
 
 /* ---- src/atom.c --------------------------------------------------------- */
 
