@@ -98,3 +98,33 @@ void y11_resource_remove(yid_t id)
         r = r->next;
     }
 }
+
+/*
+ * Drop every resource of `type` that `belongs` reports as owned by
+ * `client`: destroy frees the object, the table entry is removed here.
+ * Used at client disconnect to release pixmaps and graphics contexts.
+ */
+void y11_resource_purge_type(int type, struct y11_client *client,
+                             int (*belongs)(void *ptr,
+                                            struct y11_client *client),
+                             void (*destroy)(void *ptr))
+{
+    unsigned i;
+
+    for (i = 0; i < Y11_RESOURCE_BUCKETS; i++) {
+        struct y11_resource **link = &y11_resource_table[i];
+
+        while (*link != NULL) {
+            struct y11_resource *r = *link;
+            struct y11_resource *next = r->next;
+
+            if (r->type == type && belongs(r->ptr, client)) {
+                *link = next;
+                destroy(r->ptr);
+                free(r);
+            } else {
+                link = &r->next;
+            }
+        }
+    }
+}

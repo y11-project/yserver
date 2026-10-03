@@ -56,6 +56,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     y11_events_purge_client(c);
     /* Per the X11 protocol, a disconnect destroys the client's windows. */
     y11_window_destroy_owned(c);
+    /* And its pixmaps. */
+    y11_pixmap_purge_client(c);
     if (c->fd >= 0)
         close(c->fd);
     free(c->in_buf);

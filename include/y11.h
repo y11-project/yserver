@@ -145,6 +145,59 @@ enum y11_resource_type {
     Y11_RESOURCE_GC     = 3
 };
 
+/* ---- drawables ------------------------------------------------------------ */
+
+typedef enum {
+    Y11_DRAWABLE_WINDOW = 1,
+    Y11_DRAWABLE_PIXMAP = 2
+} y11_drawable_type_t;
+
+typedef struct y11_rect {
+    int16_t  x, y;
+    uint16_t width, height;
+} y11_rect_t;
+
+/*
+ * A drawable is any target with a linear 32-bit pixel buffer: an
+ * on-screen window or an off-screen pixmap.  Buffers are always stored
+ * as 32bpp rows (stride = width * 4); the drawable depth only selects
+ * the wire-format conversion at the PutImage/GetImage boundary.
+ */
+typedef struct y11_drawable {
+    yid_t                id;
+    y11_drawable_type_t  type;
+    uint16_t             width;
+    uint16_t             height;
+    uint8_t              depth;
+    uint8_t              bpp;        /* always 32 internally */
+    size_t               stride;
+    uint32_t            *pixels;     /* 32-bit XRGB linear buffer */
+} y11_drawable_t;
+
+/* Pixmaps encapsulate an off-screen buffer owned by one client. */
+struct y11_pixmap {
+    y11_drawable_t    base;
+    struct y11_client *owner;
+    bool              is_shm;    /* MIT-SHM pixmaps are not supported yet */
+};
+
+/* Graphics contexts hold the mutable rasterization state. */
+struct y11_gc {
+    yid_t            id;
+    struct y11_client *owner;
+    uint8_t          function;         /* GXcopy (3), GXxor (6), ... */
+    uint32_t         plane_mask;       /* plane write mask */
+    uint32_t         foreground;       /* XRGB color */
+    uint32_t         background;       /* XRGB color */
+    uint16_t         line_width;
+    int16_t          clip_x_origin;
+    int16_t          clip_y_origin;
+    size_t           num_clip_rects;
+    y11_rect_t      *clip_rects;       /* optional clipping boxes */
+    uint8_t          subwindow_mode;   /* ClipByChildren (0) */
+    uint8_t          depth;            /* drawable depth at creation */
+};
+
 /* ---- screen geometry (1920x1080 at ~96 dpi) ---------------------------- */
 
 #define Y11_SCREEN_WIDTH       1920u
@@ -428,6 +481,19 @@ void  y11_resource_shutdown(void);
 int   y11_resource_add(yid_t id, int type, void *ptr);
 void *y11_resource_get(yid_t id, int type);
 void  y11_resource_remove(yid_t id);
+void  y11_resource_purge_type(int type, struct y11_client *client,
+                              int (*belongs)(void *ptr,
+                                             struct y11_client *client),
+                              void (*destroy)(void *ptr));
+
+/* ---- src/pixmap.c ----------------------------------------------------------- */
+
+int  y11_pixmap_req_create(struct y11_client *c, const uint8_t *pkt,
+                           size_t len, size_t data_off);
+int  y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
+                         size_t len, size_t data_off);
+void y11_pixmap_destroy(void *ptr);
+void y11_pixmap_purge_client(struct y11_client *c);
 
 /* ---- src/atom.c --------------------------------------------------------- */
 

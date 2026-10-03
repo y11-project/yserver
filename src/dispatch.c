@@ -57,6 +57,10 @@ void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
 {
     y11_error err;
 
+    if (y11_debug)
+        fprintf(stderr, "y11: client %d: error code %u res 0x%lx major %u\n",
+                c->slot, code, (unsigned long)resource_id, major_opcode);
+
     memset(&err, 0, sizeof(err));
     err.type = 0;
     err.error_code = code;
@@ -465,10 +469,16 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     /* Strict sequence rule: every request packet increments the counter. */
     c->sequence_number++;
 
-    if (y11_debug)
-        fprintf(stderr, "y11: client %d: request %u opcode %u len %lu\n",
+    if (y11_debug) {
+        size_t dump = len < 20 ? len : 20;
+        size_t i;
+        fprintf(stderr, "y11: client %d: request %u opcode %u len %lu bytes:",
                 c->slot, c->sequence_number, (unsigned)opcode,
                 (unsigned long)len);
+        for (i = 0; i < dump; i++)
+            fprintf(stderr, " %02x", pkt[i]);
+        fprintf(stderr, "\n");
+    }
 
     if (wire_len == 0) {
         /* BIG-REQUESTS framing: fields start after the 8-byte header. */
@@ -500,6 +510,10 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_window_req_configure(c, pkt, len, data_off);
     case Y11_REQ_GET_GEOMETRY:
         return y11_window_req_get_geometry(c, pkt, len, data_off);
+    case Y11_REQ_CREATE_PIXMAP:
+        return y11_pixmap_req_create(c, pkt, len, data_off);
+    case Y11_REQ_FREE_PIXMAP:
+        return y11_pixmap_req_free(c, pkt, len, data_off);
     case Y11_REQ_QUERY_TREE:
         return y11_window_req_query_tree(c, pkt, len, data_off);
     case Y11_REQ_INTERN_ATOM:
@@ -537,8 +551,6 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_CREATE_GC:
     case Y11_REQ_CHANGE_GC:
     case Y11_REQ_FREE_GC:
-    case Y11_REQ_CREATE_PIXMAP:
-    case Y11_REQ_FREE_PIXMAP:
     case Y11_REQ_FREE_COLORS:
     case Y11_REQ_STORE_COLORS:
     case Y11_REQ_STORE_NAMED_COLOR:
