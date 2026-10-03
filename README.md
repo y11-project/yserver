@@ -1,6 +1,6 @@
 # y11
 
-`y11` is an unprivileged X11 display server written from scratch in ISO C99 for Linux and FreeBSD. It runs directly on top of modern DRM/KMS atomic modesetting and DRI3/DMA-BUF hardware acceleration without sharing any legacy code with Xorg. Following the classic Unix principle of separating mechanism from policy, the server manages screen scanout, buffer passing, and event routing, while window placement is left entirely to external window managers like dwm or IceWM.
+`y11` is an unprivileged X11 display server written from scratch in ISO C99 for Linux and FreeBSD. It runs directly on top of modern DRM/KMS atomic modesetting and DRI3/DMA-BUF hardware acceleration without sharing any legacy code with Xorg. Following the classic Unix principle of separating mechanism from policy, the server manages screen scanout, buffer passing, and event routing, while window placement is left entirely to external window managers.
 
 ## Building
 
