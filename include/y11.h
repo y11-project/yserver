@@ -173,6 +173,7 @@ enum y11_req_opcode {
     Y11_REQ_MAP_WINDOW               = 8,
     Y11_REQ_MAP_SUBWINDOWS           = 9,
     Y11_REQ_UNMAP_WINDOW             = 10,
+    Y11_REQ_CONFIGURE_WINDOW         = 12,
     Y11_REQ_GET_GEOMETRY             = 14,
     Y11_REQ_QUERY_TREE               = 15,
     Y11_REQ_INTERN_ATOM              = 16,

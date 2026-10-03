@@ -52,6 +52,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
 {
     if (y11_debug)
         fprintf(stderr, "y11: client %d: disconnect\n", c->slot);
+    /* Release window event subscriptions and redirect ownership. */
+    y11_events_purge_client(c);
     if (c->fd >= 0)
         close(c->fd);
     free(c->in_buf);

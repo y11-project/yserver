@@ -291,6 +291,30 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     }
 
     switch (opcode) {
+    case Y11_REQ_CREATE_WINDOW:
+        return y11_window_req_create(c, pkt, len, data_off);
+    case Y11_REQ_CHANGE_WINDOW_ATTRIBUTES:
+        return y11_window_req_change_attributes(c, pkt, len, data_off);
+    case Y11_REQ_GET_WINDOW_ATTRIBUTES:
+        return y11_window_req_get_attributes(c, pkt, len, data_off);
+    case Y11_REQ_DESTROY_WINDOW:
+        return y11_window_req_destroy(c, pkt, len, data_off);
+    case Y11_REQ_DESTROY_SUBWINDOWS:
+        return y11_window_req_destroy_subwindows(c, pkt, len, data_off);
+    case Y11_REQ_REPARENT_WINDOW:
+        return y11_window_req_reparent(c, pkt, len, data_off);
+    case Y11_REQ_MAP_WINDOW:
+        return y11_window_req_map(c, pkt, len, data_off);
+    case Y11_REQ_MAP_SUBWINDOWS:
+        return y11_window_req_map_subwindows(c, pkt, len, data_off);
+    case Y11_REQ_UNMAP_WINDOW:
+        return y11_window_req_unmap(c, pkt, len, data_off);
+    case Y11_REQ_CONFIGURE_WINDOW:
+        return y11_window_req_configure(c, pkt, len, data_off);
+    case Y11_REQ_GET_GEOMETRY:
+        return y11_window_req_get_geometry(c, pkt, len, data_off);
+    case Y11_REQ_QUERY_TREE:
+        return y11_window_req_query_tree(c, pkt, len, data_off);
     case Y11_REQ_INTERN_ATOM:
         return y11_atom_req_intern(c, pkt, len, data_off);
     case Y11_REQ_GET_ATOM_NAME:
@@ -316,7 +340,6 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_FREE_GC:
     case Y11_REQ_CREATE_PIXMAP:
     case Y11_REQ_FREE_PIXMAP:
-    case Y11_REQ_CHANGE_WINDOW_ATTRIBUTES:
         return y11_dispatch_accept_resource(c, pkt, len, data_off);
     case Y11_REQ_NO_OPERATION:
         return 0;               /* no reply */
