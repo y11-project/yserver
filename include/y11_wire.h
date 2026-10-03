@@ -327,6 +327,101 @@ typedef struct {
     uint32_t pad1[5];
 } y11_query_colors_reply;       /* 32 bytes + one 8-byte RGB item per color */
 
+/* ---- rendering requests ------------------------------------------------- */
+
+typedef struct {
+    uint8_t  opcode;            /* 53 = CreatePixmap */
+    uint8_t  depth;
+    uint16_t length;
+    uint32_t pid;
+    uint32_t drawable;
+    uint16_t width, height;
+} y11_create_pixmap_req;        /* 16 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 55 = CreateGC */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t gc;
+    uint32_t drawable;
+    uint32_t value_mask;
+} y11_create_gc_req;            /* 16 bytes + value list */
+
+typedef struct {
+    uint8_t  opcode;            /* 56 = ChangeGC */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t gc;
+    uint32_t value_mask;
+} y11_change_gc_req;            /* 12 bytes + value list */
+
+typedef struct {
+    uint8_t  opcode;            /* 57 = CopyGC */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t src_gc;
+    uint32_t dst_gc;
+    uint32_t value_mask;
+} y11_copy_gc_req;              /* 16 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 59 = SetClipRectangles */
+    uint8_t  ordering;          /* 0 Unsorted, 1 YXSorted, 2 YXBanded */
+    uint16_t length;
+    uint32_t gc;
+    int16_t  clip_x_origin;
+    int16_t  clip_y_origin;
+} y11_set_clip_rectangles_req;  /* 12 bytes + 8-byte rectangles */
+
+typedef struct {
+    uint8_t  opcode;            /* 70 = PolyFillRectangle */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t gc;
+    uint32_t drawable;
+} y11_poly_fill_rectangle_req;  /* 12 bytes + 8-byte rectangles */
+
+typedef struct {
+    uint8_t  opcode;            /* 62 = CopyArea */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t src_drawable;
+    uint32_t dst_drawable;
+    uint32_t gc;
+    int16_t  src_x, src_y;
+    int16_t  dst_x, dst_y;
+    uint16_t width, height;
+} y11_copy_area_req;            /* 28 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 72 = PutImage */
+    uint8_t  format;            /* 0 Bitmap, 1 XYPixmap, 2 ZPixmap */
+    uint16_t length;
+    uint32_t drawable;
+    uint32_t gc;
+    uint16_t width, height;
+    int16_t  dst_x, dst_y;
+    uint8_t  left_pad;
+    uint8_t  depth;
+    uint16_t pad0;
+} y11_put_image_req;            /* 24 bytes + image data */
+
+typedef struct {
+    uint8_t  opcode;            /* 73 = GetImage */
+    uint8_t  format;
+    uint16_t length;
+    uint32_t drawable;
+    int16_t  x, y;
+    uint16_t width, height;
+    uint32_t plane_mask;
+} y11_get_image_req;            /* 20 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = depth */
+    uint32_t visual;            /* bytes 8-11 */
+    uint32_t pad0[5];
+} y11_get_image_reply;          /* 32 bytes + image data */
+
 typedef struct {
     y11_reply_hdr hdr;
     uint16_t exact_red;          /* bytes 8-9 */
@@ -533,5 +628,15 @@ typedef char y11_wire_chk_lookup_color_reply[(sizeof(y11_lookup_color_reply) == 
 typedef char y11_wire_chk_query_colors_reply[(sizeof(y11_query_colors_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_query_pointer_reply[(sizeof(y11_query_pointer_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_translate_coords_reply[(sizeof(y11_translate_coords_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_create_pixmap_req[(sizeof(y11_create_pixmap_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_create_gc_req[(sizeof(y11_create_gc_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_change_gc_req[(sizeof(y11_change_gc_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_copy_gc_req[(sizeof(y11_copy_gc_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_set_clip_rectangles_req[(sizeof(y11_set_clip_rectangles_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_poly_fill_rectangle_req[(sizeof(y11_poly_fill_rectangle_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_copy_area_req[(sizeof(y11_copy_area_req) == 28) ? 1 : -1];
+typedef char y11_wire_chk_put_image_req[(sizeof(y11_put_image_req) == 24) ? 1 : -1];
+typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : -1];
+typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */

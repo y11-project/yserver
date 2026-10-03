@@ -564,7 +564,6 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_CHANGE_PROPERTY:
     case Y11_REQ_DELETE_PROPERTY:
     case Y11_REQ_CLEAR_AREA:
-    case Y11_REQ_COPY_AREA:
     case Y11_REQ_COPY_PLANE:
     case Y11_REQ_POLY_POINT:
     case Y11_REQ_POLY_LINE:
@@ -572,14 +571,20 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_POLY_RECTANGLE:
     case Y11_REQ_POLY_ARC:
     case Y11_REQ_FILL_POLY:
-    case Y11_REQ_POLY_FILL_RECTANGLE:
     case Y11_REQ_POLY_FILL_ARC:
-    case Y11_REQ_PUT_IMAGE:
     case Y11_REQ_POLY_TEXT8:
     case Y11_REQ_POLY_TEXT16:
     case Y11_REQ_IMAGE_TEXT8:
     case Y11_REQ_IMAGE_TEXT16:
         return y11_dispatch_accept_resource(c, pkt, len, data_off);
+    case Y11_REQ_COPY_AREA:
+        return y11_render_req_copy_area(c, pkt, len, data_off);
+    case Y11_REQ_POLY_FILL_RECTANGLE:
+        return y11_render_req_poly_fill_rectangle(c, pkt, len, data_off);
+    case Y11_REQ_PUT_IMAGE:
+        return y11_render_req_put_image(c, pkt, len, data_off);
+    case Y11_REQ_GET_IMAGE:
+        return y11_render_req_get_image(c, pkt, len, data_off);
     case Y11_REQ_NO_OPERATION:
         return 0;               /* no reply */
     default:

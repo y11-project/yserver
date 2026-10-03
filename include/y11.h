@@ -247,6 +247,10 @@ enum y11_req_opcode {
     Y11_REQ_COPY_GC                  = 57,
     Y11_REQ_SET_CLIP_RECTANGLES      = 59,
     Y11_REQ_FREE_GC                  = 60,
+    Y11_REQ_COPY_AREA                = 62,
+    Y11_REQ_POLY_FILL_RECTANGLE      = 70,
+    Y11_REQ_PUT_IMAGE                = 72,
+    Y11_REQ_GET_IMAGE                = 73,
     Y11_REQ_QUERY_EXTENSION          = 98,
     Y11_REQ_ALLOC_COLOR              = 84,
     Y11_REQ_ALLOC_NAMED_COLOR        = 85,
@@ -268,7 +272,6 @@ enum y11_req_opcode {
  */
 enum y11_req_draw_opcode {
     Y11_REQ_CLEAR_AREA           = 61,
-    Y11_REQ_COPY_AREA            = 62,
     Y11_REQ_COPY_PLANE           = 63,
     Y11_REQ_POLY_POINT           = 64,
     Y11_REQ_POLY_LINE            = 65,
@@ -276,9 +279,7 @@ enum y11_req_draw_opcode {
     Y11_REQ_POLY_RECTANGLE       = 67,
     Y11_REQ_POLY_ARC             = 68,
     Y11_REQ_FILL_POLY            = 69,
-    Y11_REQ_POLY_FILL_RECTANGLE  = 70,
     Y11_REQ_POLY_FILL_ARC        = 71,
-    Y11_REQ_PUT_IMAGE            = 72,
     Y11_REQ_POLY_TEXT8           = 74,
     Y11_REQ_POLY_TEXT16          = 75,
     Y11_REQ_IMAGE_TEXT8          = 76,
@@ -518,6 +519,21 @@ int  y11_gc_req_free(struct y11_client *c, const uint8_t *pkt,
                      size_t len, size_t data_off);
 void y11_gc_destroy(void *ptr);
 void y11_gc_purge_client(struct y11_client *c);
+
+/* ---- src/render.c ------------------------------------------------------------ */
+
+y11_drawable_t *y11_drawable_lookup(yid_t id);
+int  y11_render_req_poly_fill_rectangle(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off);
+int  y11_render_req_copy_area(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
+int  y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
+int  y11_render_req_get_image(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
+void y11_render_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
+                             uint32_t w, uint32_t h);
 
 /* ---- misc ------------------------------------------------------------------------ */
 
