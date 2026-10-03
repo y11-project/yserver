@@ -244,6 +244,8 @@ enum y11_req_opcode {
     Y11_REQ_FREE_PIXMAP              = 54,
     Y11_REQ_CREATE_GC                = 55,
     Y11_REQ_CHANGE_GC                = 56,
+    Y11_REQ_COPY_GC                  = 57,
+    Y11_REQ_SET_CLIP_RECTANGLES      = 59,
     Y11_REQ_FREE_GC                  = 60,
     Y11_REQ_QUERY_EXTENSION          = 98,
     Y11_REQ_ALLOC_COLOR              = 84,
@@ -494,6 +496,25 @@ int  y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
                          size_t len, size_t data_off);
 void y11_pixmap_destroy(void *ptr);
 void y11_pixmap_purge_client(struct y11_client *c);
+
+/* ---- src/gc.c ------------------------------------------------------------------ */
+
+int  y11_gc_req_create(struct y11_client *c, const uint8_t *pkt,
+                       size_t len, size_t data_off);
+int  y11_gc_req_change(struct y11_client *c, const uint8_t *pkt,
+                       size_t len, size_t data_off);
+int  y11_gc_req_copy(struct y11_client *c, const uint8_t *pkt,
+                     size_t len, size_t data_off);
+int  y11_gc_req_set_clip_rectangles(struct y11_client *c, const uint8_t *pkt,
+                                    size_t len, size_t data_off);
+int  y11_gc_req_free(struct y11_client *c, const uint8_t *pkt,
+                     size_t len, size_t data_off);
+void y11_gc_destroy(void *ptr);
+void y11_gc_purge_client(struct y11_client *c);
+
+/* ---- misc ------------------------------------------------------------------------ */
+
+unsigned y11_popcount32(uint32_t v);
 
 /* ---- src/atom.c --------------------------------------------------------- */
 

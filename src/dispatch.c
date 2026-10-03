@@ -549,8 +549,15 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_GET_SCREEN_SAVER:
         return y11_dispatch_get_screen_saver(c);
     case Y11_REQ_CREATE_GC:
+        return y11_gc_req_create(c, pkt, len, data_off);
     case Y11_REQ_CHANGE_GC:
+        return y11_gc_req_change(c, pkt, len, data_off);
+    case Y11_REQ_COPY_GC:
+        return y11_gc_req_copy(c, pkt, len, data_off);
+    case Y11_REQ_SET_CLIP_RECTANGLES:
+        return y11_gc_req_set_clip_rectangles(c, pkt, len, data_off);
     case Y11_REQ_FREE_GC:
+        return y11_gc_req_free(c, pkt, len, data_off);
     case Y11_REQ_FREE_COLORS:
     case Y11_REQ_STORE_COLORS:
     case Y11_REQ_STORE_NAMED_COLOR:

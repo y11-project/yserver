@@ -34,7 +34,7 @@ static void y11_window_destroy_tree(struct y11_window *win);
 
 /* ---- small helpers --------------------------------------------------------- */
 
-static unsigned y11_popcount32(uint32_t v)
+unsigned y11_popcount32(uint32_t v)
 {
     unsigned n = 0;
     while (v != 0) {
