@@ -697,6 +697,7 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_CHANGE_PROPERTY:
     case Y11_REQ_DELETE_PROPERTY:
     case Y11_REQ_CLEAR_AREA:
+        return y11_window_req_clear_area(c, pkt, len, data_off);
     case Y11_REQ_COPY_PLANE:
     case Y11_REQ_POLY_POINT:
     case Y11_REQ_POLY_LINE:

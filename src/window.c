@@ -937,6 +937,89 @@ int y11_window_req_destroy_subwindows(struct y11_client *c, const uint8_t *pkt,
 }
 
 /*
+ * ClearArea (opcode 61): paint the region with the window's background
+ * pixel.  A zero width or height means "to the window edge"; when
+ * exposures is set, the window's ExposureMask subscribers receive
+ * Expose for the cleared region.
+ */
+int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t window_id;
+    struct y11_window *win;
+    int16_t x, y;
+    uint32_t w, h;
+    uint8_t exposures;
+
+    (void)c;
+    if (len - data_off != 16u)
+        goto badlength;
+    window_id = y11_wire_get32(body + 0);
+    x = (int16_t)y11_wire_get16(body + 4);
+    y = (int16_t)y11_wire_get16(body + 6);
+    w = y11_wire_get16(body + 8);
+    h = y11_wire_get16(body + 10);
+    exposures = pkt[1];
+
+    win = y11_window_get(window_id);
+    if (win == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW, window_id, pkt[0]);
+        return 0;
+    }
+    if (win->drawable.pixels == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, window_id, pkt[0]);
+        return 0;
+    }
+
+    if (w == 0)
+        w = (uint32_t)(win->drawable.width - x < 0
+                           ? 0 : win->drawable.width - x);
+    if (h == 0)
+        h = (uint32_t)(win->drawable.height - y < 0
+                           ? 0 : win->drawable.height - y);
+    if (x >= (int16_t)win->drawable.width || y >= (int16_t)win->drawable.height)
+        return 0;               /* nothing to clear */
+
+    {
+        int32_t col, row;
+
+        if (x < 0) {
+            if ((uint32_t)(-x) >= w)
+                return 0;
+            w -= (uint32_t)(-x);
+            x = 0;
+        }
+        if (y < 0) {
+            if ((uint32_t)(-y) >= h)
+                return 0;
+            h -= (uint32_t)(-y);
+            y = 0;
+        }
+        if (x + (int32_t)w > (int32_t)win->drawable.width)
+            w = (uint32_t)((int32_t)win->drawable.width - x);
+        if (y + (int32_t)h > (int32_t)win->drawable.height)
+            h = (uint32_t)((int32_t)win->drawable.height - y);
+
+        for (row = y; row < y + (int32_t)h; row++) {
+            for (col = x; col < x + (int32_t)w; col++)
+                win->drawable.pixels[(size_t)row * (win->drawable.stride / 4u) +
+                                     (size_t)col] = win->background_pixel;
+        }
+    }
+
+    if (exposures != 0)
+        y11_damage_mapped(win, x, y, w, h);
+    else
+        y11_damage_drawn(&win->drawable, x, y, w, h);
+    return 0;                   /* no reply */
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+
+/*
  * ReparentWindow (opcode 7): window, parent, x, y.  Vital for window
  * managers building decoration frames.
  */

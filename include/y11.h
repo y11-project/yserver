@@ -247,6 +247,7 @@ enum y11_req_opcode {
     Y11_REQ_COPY_GC                  = 57,
     Y11_REQ_SET_CLIP_RECTANGLES      = 59,
     Y11_REQ_FREE_GC                  = 60,
+    Y11_REQ_CLEAR_AREA               = 61,
     Y11_REQ_COPY_AREA                = 62,
     Y11_REQ_POLY_FILL_RECTANGLE      = 70,
     Y11_REQ_PUT_IMAGE                = 72,
@@ -271,7 +272,6 @@ enum y11_req_opcode {
  * a window) must be able to issue them without a BadRequest error.
  */
 enum y11_req_draw_opcode {
-    Y11_REQ_CLEAR_AREA           = 61,
     Y11_REQ_COPY_PLANE           = 63,
     Y11_REQ_POLY_POINT           = 64,
     Y11_REQ_POLY_LINE            = 65,
@@ -462,6 +462,8 @@ int  y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off);
 int  y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
                                  size_t len, size_t data_off);
+int  y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
+                               size_t len, size_t data_off);
 int  y11_window_req_query_tree(struct y11_client *c, const uint8_t *pkt,
                                size_t len, size_t data_off);
 void y11_window_destroy_owned(struct y11_client *c);

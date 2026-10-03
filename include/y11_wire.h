@@ -417,6 +417,14 @@ typedef struct {
 } y11_get_image_req;            /* 20 bytes */
 
 typedef struct {
+    uint8_t  opcode;            /* 61 = ClearArea */
+    uint8_t  exposures;         /* generate Expose when nonzero */
+    uint16_t length;
+    uint32_t window;
+    int16_t  x, y;
+    uint16_t width, height;     /* zero: to the window edge */
+} y11_clear_area_req;           /* 16 bytes */
+typedef struct {
     y11_reply_hdr hdr;          /* hdr.pad0 = depth */
     uint32_t visual;            /* bytes 8-11 */
     uint32_t pad0[5];
@@ -638,5 +646,6 @@ typedef char y11_wire_chk_copy_area_req[(sizeof(y11_copy_area_req) == 28) ? 1 : 
 typedef char y11_wire_chk_put_image_req[(sizeof(y11_put_image_req) == 24) ? 1 : -1];
 typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : -1];
 typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_clear_area_req[(sizeof(y11_clear_area_req) == 16) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */
