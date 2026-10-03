@@ -1,0 +1,442 @@
+/*
+ * client.c - Client connection management for the Y11 display server.
+ *
+ * Handles client allocation, the per-client request reassembly ("ring")
+ * buffer, and the X11 connection setup handshake.
+ */
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "y11.h"
+#include "y11_wire.h"
+
+/* ---- allocation ---------------------------------------------------------- */
+
+struct y11_client *y11_client_create(int fd, int slot)
+{
+    struct y11_client *c;
+
+    c = calloc(1, sizeof(*c));
+    if (c == NULL)
+        return NULL;
+
+    c->fd = fd;
+    c->slot = slot;
+    c->state = Y11_CLIENT_HANDSHAKE;
+    c->sequence_number = 0;
+    c->resource_id_base = (yid_t)(slot + 1) * Y11_RID_BASE_STEP;   /* 0x00100000, 0x00200000, ... */
+
+    c->in_cap = Y11_INBUF_MIN;
+    c->in_buf = malloc(c->in_cap);
+    if (c->in_buf == NULL) {
+        free(c);
+        return NULL;
+    }
+
+    c->out_cap = Y11_OUTBUF_MIN;
+    c->out_buf = malloc(c->out_cap);
+    if (c->out_buf == NULL) {
+        free(c->in_buf);
+        free(c);
+        return NULL;
+    }
+
+    return c;
+}
+
+void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
+{
+    if (y11_debug)
+        fprintf(stderr, "y11: client %d: disconnect\n", c->slot);
+    if (c->fd >= 0)
+        close(c->fd);
+    free(c->in_buf);
+    free(c->out_buf);
+    srv->clients[c->slot] = NULL;
+    free(c);
+}
+
+/* ---- input ("ring") buffer ------------------------------------------------ */
+
+static int y11_client_grow_inbuf(struct y11_client *c)
+{
+    size_t cap = c->in_cap * 2;
+    uint8_t *buf;
+
+    if (cap > Y11_INBUF_MAX) {
+        if (c->in_cap >= Y11_INBUF_MAX)
+            return 0;           /* cannot grow any further */
+        cap = Y11_INBUF_MAX;
+    }
+
+    buf = realloc(c->in_buf, cap);
+    if (buf == NULL)
+        return -1;
+
+    c->in_buf = buf;
+    c->in_cap = cap;
+    return 1;
+}
+
+/*
+ * Read everything currently available from the socket into the client's
+ * reassembly buffer.  Returns 0 on success (including clean EOF, which
+ * marks the client dead), -1 on a fatal read error.
+ */
+int y11_client_read(struct y11_client *c)
+{
+    for (;;) {
+        ssize_t n;
+
+        if (c->in_len == c->in_cap) {
+            int grown = y11_client_grow_inbuf(c);
+            if (grown < 0)
+                return -1;
+            if (grown == 0)
+                return 0;       /* buffer at maximum: parse what we have */
+        }
+
+        n = read(c->fd, c->in_buf + c->in_len, c->in_cap - c->in_len);
+        if (n > 0) {
+            c->in_len += (size_t)n;
+            continue;
+        }
+        if (n == 0) {
+            c->dead = 1;        /* orderly shutdown by peer */
+            return 0;
+        }
+        if (errno == EINTR)
+            continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return 0;
+        return -1;
+    }
+}
+
+/* ---- output buffer --------------------------------------------------------- */
+
+/*
+ * Queue bytes for transmission.  The event loop flushes pending output
+ * after each parse pass; POLLOUT resumes when the client catches up.
+ */
+int y11_client_send(struct y11_client *c, const void *data, size_t len)
+{
+    if (c->out_len + len > c->out_cap) {
+        size_t cap = c->out_cap;
+        uint8_t *buf;
+
+        while (cap < c->out_len + len)
+            cap *= 2;
+        buf = realloc(c->out_buf, cap);
+        if (buf == NULL)
+            return -1;
+        c->out_buf = buf;
+        c->out_cap = cap;
+    }
+
+    memcpy(c->out_buf + c->out_len, data, len);
+    c->out_len += len;
+    return 0;
+}
+
+/*
+ * Write all pending output.  Returns 1 when fully flushed, 0 when the
+ * client is not ready to accept more (POLLOUT will resume), -1 on error.
+ */
+int y11_client_flush(struct y11_client *c)
+{
+    while (c->out_len > 0) {
+        ssize_t n = write(c->fd, c->out_buf, c->out_len);
+
+        if (n > 0) {
+            memmove(c->out_buf, c->out_buf + n, c->out_len - (size_t)n);
+            c->out_len -= (size_t)n;
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            return 0;
+        return -1;
+    }
+    return 1;
+}
+
+/* ---- connection setup handshake -------------------------------------------- */
+
+/*
+ * Send the failed connection setup reply and mark the client for closing:
+ *
+ *   1   0 (failed)
+ *   1   unused
+ *   2   length of reason in bytes
+ *   2   unused
+ *   n   reason string
+ */
+static int y11_client_refuse(struct y11_client *c, size_t *off,
+                             const char *reason)
+{
+    uint8_t hdr[6];
+    size_t rlen = strlen(reason);
+
+    *off = c->in_len;           /* discard the rejected setup request */
+
+    hdr[0] = 0;                 /* status: failed */
+    hdr[1] = 0;
+    y11_wire_put16(hdr + 2, (uint16_t)rlen);
+    hdr[4] = 0;
+    hdr[5] = 0;
+
+    if (y11_client_send(c, hdr, sizeof(hdr)) != 0)
+        return -1;
+    if (rlen > 0 && y11_client_send(c, reason, rlen) != 0)
+        return -1;
+
+    c->wants_close = 1;
+    return 0;
+}
+
+/*
+ * Send the full successful connection setup reply:
+ *
+ *   prefix        8 bytes   success, protocol version, additional length
+ *   fixed info   32 bytes   release, resource ids, vendor, formats, limits
+ *   vendor       16 bytes   "The Y11 Project" padded to a 4-byte boundary
+ *   formats      16 bytes   1-bit bitmap and 32-bit pixmap formats
+ *   screen       40 bytes   root window, colormap, geometry, visuals
+ *   depth         8 bytes   root depth 24 with one visual
+ *   visual       24 bytes   TrueColor visual
+ *
+ *   Total: 8 + 32 + 16 + 16 + 40 + 8 + 24 = 144 bytes.
+ */
+static int y11_client_send_setup_success(struct y11_client *c)
+{
+    y11_conn_setup_prefix prefix;
+    y11_conn_setup_info info;
+    y11_pixmap_format formats[2];
+    y11_screen_info screen;
+    y11_depth_info depth;
+    y11_visual_type visual;
+    static const char vendor[] = Y11_VENDOR_STRING;
+    static const uint8_t vendor_pad[4] = { 0, 0, 0, 0 };
+    size_t vlen = sizeof(vendor) - 1;               /* 15 */
+    uint32_t vend_padded = y11_wire_pad4((uint32_t)vlen);   /* 16 */
+    uint32_t additional;
+
+    /* 8-byte setup prefix */
+    additional = 32u + vend_padded + (uint32_t)(sizeof(formats)) +
+                 (uint32_t)(sizeof(screen)) + (uint32_t)(sizeof(depth)) +
+                 (uint32_t)(sizeof(visual));
+
+    memset(&prefix, 0, sizeof(prefix));
+    prefix.success = 1;
+    y11_wire_put16(&prefix.major_version, Y11_PROTO_MAJOR);
+    y11_wire_put16(&prefix.minor_version, Y11_PROTO_MINOR);
+    y11_wire_put16(&prefix.length, (uint16_t)(additional / 4u));
+
+    /* 32-byte fixed setup info */
+    memset(&info, 0, sizeof(info));
+    y11_wire_put32(&info.release_number, Y11_RELEASE_NUMBER);
+    y11_wire_put32(&info.resource_id_base, c->resource_id_base);
+    y11_wire_put32(&info.resource_id_mask, Y11_RID_MASK);
+    y11_wire_put32(&info.motion_buffer_size, 256u);
+    y11_wire_put16(&info.vendor_len, (uint16_t)vlen);
+    y11_wire_put16(&info.max_request_size, (uint16_t)Y11_MAX_REQUEST_UNITS);
+    info.num_screens = 1;
+    info.num_formats = 2;
+    info.image_byte_order = 0;          /* LSBFirst */
+    info.bitmap_bit_order = 0;          /* Least Significant first */
+    info.bitmap_scanline_unit = 32;
+    info.bitmap_scanline_pad = 32;
+    info.min_keycode = 8;
+    info.max_keycode = 255;
+
+    /* 16-byte format list */
+    memset(formats, 0, sizeof(formats));
+    formats[0].depth = 1;
+    formats[0].bits_per_pixel = 1;
+    formats[0].scanline_pad = 32;
+    formats[1].depth = 24;
+    formats[1].bits_per_pixel = 32;
+    formats[1].scanline_pad = 32;
+
+    /* 40-byte screen information */
+    memset(&screen, 0, sizeof(screen));
+    y11_wire_put32(&screen.root_window, Y11_SCREEN_ROOT);
+    y11_wire_put32(&screen.default_colormap, Y11_SCREEN_COLORMAP);
+    y11_wire_put32(&screen.white_pixel, 0x00FFFFFFu);
+    y11_wire_put32(&screen.black_pixel, 0x00000000u);
+    y11_wire_put32(&screen.current_input_mask, 0u);
+    y11_wire_put16(&screen.width_in_pixels, (uint16_t)Y11_SCREEN_WIDTH);
+    y11_wire_put16(&screen.height_in_pixels, (uint16_t)Y11_SCREEN_HEIGHT);
+    y11_wire_put16(&screen.width_in_mm, (uint16_t)Y11_SCREEN_MM_WIDTH);
+    y11_wire_put16(&screen.height_in_mm, (uint16_t)Y11_SCREEN_MM_HEIGHT);
+    y11_wire_put16(&screen.min_installed_maps, 1);
+    y11_wire_put16(&screen.max_installed_maps, 1);
+    y11_wire_put32(&screen.root_visual, Y11_SCREEN_VISUAL);
+    screen.backing_stores = 0;          /* Never */
+    screen.save_unders = 0;
+    screen.root_depth = 24;
+    screen.allowed_depths = 1;
+
+    /* 8-byte depth information for the root depth */
+    memset(&depth, 0, sizeof(depth));
+    depth.depth = 24;
+    y11_wire_put16(&depth.visuals_count, 1);
+
+    /* 24-byte visual information */
+    memset(&visual, 0, sizeof(visual));
+    y11_wire_put32(&visual.visual_id, Y11_SCREEN_VISUAL);
+    visual.class = 4;                   /* TrueColor */
+    visual.bits_per_rgb = 8;
+    y11_wire_put16(&visual.colormap_entries, 256);
+    y11_wire_put32(&visual.red_mask, 0x00FF0000u);
+    y11_wire_put32(&visual.green_mask, 0x0000FF00u);
+    y11_wire_put32(&visual.blue_mask, 0x000000FFu);
+
+    if (y11_client_send(c, &prefix, sizeof(prefix)) != 0)
+        return -1;
+    if (y11_client_send(c, &info, sizeof(info)) != 0)
+        return -1;
+    if (y11_client_send(c, vendor, vlen) != 0)
+        return -1;
+    if (y11_client_send(c, vendor_pad, vend_padded - vlen) != 0)
+        return -1;
+    if (y11_client_send(c, formats, sizeof(formats)) != 0)
+        return -1;
+    if (y11_client_send(c, &screen, sizeof(screen)) != 0)
+        return -1;
+    if (y11_client_send(c, &depth, sizeof(depth)) != 0)
+        return -1;
+    if (y11_client_send(c, &visual, sizeof(visual)) != 0)
+        return -1;
+
+    return 0;
+}
+
+/*
+ * Parse the connection setup request.  *off is advanced past the bytes
+ * consumed.  Returns 0 on success, -1 on a fatal error.
+ */
+static int y11_client_handshake(struct y11_client *c, size_t *off)
+{
+    const y11_conn_setup_req *req;
+    uint32_t skip;
+
+    if (c->in_len - *off < sizeof(*req))
+        return 0;               /* wait for the 12-byte header */
+
+    req = (const y11_conn_setup_req *)(c->in_buf + *off);
+
+    if (req->byte_order != 'l') {
+        /* Big-endian ('B', 0x42) and unknown byte orders are rejected in
+         * phase 1; all wire data on this server is little-endian. */
+        return y11_client_refuse(c, off,
+            "big-endian byte order is not supported (y11 phase 1)");
+    }
+
+    if (y11_wire_get16(&req->major_version) != Y11_PROTO_MAJOR) {
+        return y11_client_refuse(c, off,
+            "unsupported protocol major version (y11 speaks 11)");
+    }
+
+    /* Skip the authorization protocol name and data, each padded to a
+     * 4-byte boundary.  Phase 1 accepts any authorization data. */
+    skip = y11_wire_pad4(y11_wire_get16(&req->auth_proto_len)) +
+           y11_wire_pad4(y11_wire_get16(&req->auth_data_len));
+    if (c->in_len - *off - sizeof(*req) < skip)
+        return 0;               /* wait for the authorization data */
+
+    *off += sizeof(*req) + skip;
+
+    if (y11_client_send_setup_success(c) != 0)
+        return -1;
+
+    c->state = Y11_CLIENT_RUNNING;
+    c->sequence_number = 0;
+    return 0;
+}
+
+/* ---- request stream parsing ------------------------------------------------- */
+
+/*
+ * Parse every complete request packet buffered at *off and hand it to the
+ * dispatcher.  Each packet increments the client's sequence number.
+ * Returns 0 on success, -1 on a fatal error.
+ */
+static int y11_client_requests(struct y11_client *c, size_t *off)
+{
+    while (c->in_len - *off >= sizeof(y11_req)) {
+        const uint8_t *pkt = c->in_buf + *off;
+        uint16_t wire_len = y11_wire_get16(pkt + 2);
+        size_t pkt_len;
+        int rc;
+
+        if (wire_len == 0) {
+            if (!c->big_requests) {
+                /* BIG-REQUESTS not enabled: the X server reads this as a
+                 * 4-byte request (its opcode-specific fields decide). */
+                pkt_len = sizeof(y11_req);
+            } else {
+                /* Extended 8-byte header carries the true length. */
+                uint32_t true_len;
+
+                if (c->in_len - *off < sizeof(y11_big_req))
+                    break;      /* wait for the extended header */
+                true_len = y11_wire_get32(pkt + 4);
+                if (true_len < 2 || (size_t)true_len * 4u > Y11_INBUF_MAX) {
+                    /* Cannot hold the extended header, or the request is
+                     * larger than this server will ever buffer: fatal. */
+                    c->wants_close = 1;
+                    return -1;
+                }
+                pkt_len = (size_t)true_len * 4u;
+            }
+        } else {
+            pkt_len = (size_t)wire_len * 4u;
+            if (pkt_len > Y11_INBUF_MAX) {
+                c->wants_close = 1;
+                return -1;
+            }
+        }
+
+        if (c->in_len - *off < pkt_len)
+            break;              /* wait for the rest of the packet */
+
+        rc = y11_dispatch_req(c, pkt, pkt_len);
+        *off += pkt_len;
+        if (rc < 0) {
+            c->wants_close = 1;
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Advance the client's protocol state machine over its buffered input:
+ * the connection setup handshake first, then the request stream.
+ * Returns 0 on success, -1 on a fatal error.
+ */
+int y11_client_process(struct y11_client *c)
+{
+    size_t off = 0;
+    int rc = 0;
+
+    if (c->state == Y11_CLIENT_HANDSHAKE)
+        rc = y11_client_handshake(c, &off);
+
+    if (rc == 0 && c->state == Y11_CLIENT_RUNNING)
+        rc = y11_client_requests(c, &off);
+
+    if (off > 0) {
+        /* Compact the reassembly buffer: drop consumed bytes. */
+        memmove(c->in_buf, c->in_buf + off, c->in_len - off);
+        c->in_len -= off;
+    }
+    return rc;
+}

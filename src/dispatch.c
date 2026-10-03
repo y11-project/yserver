@@ -1,0 +1,331 @@
+/*
+ * dispatch.c - Opcode dispatcher, sequence tracking and reply encoding
+ * for the Y11 display server.
+ *
+ * Strict sequence rule: every incoming request packet increments the
+ * client's sequence number, and every reply or error packet carries that
+ * number (low 16 bits) in bytes 2-3.
+ *
+ * BIG-REQUESTS: the extension is advertised through QueryExtension and
+ * enabled by its 4-byte Enable request (minor opcode 0).  Once enabled,
+ * a request whose 16-bit length field is 0 carries its true 4-byte-unit
+ * length in the following 32-bit word (an 8-byte extended header whose
+ * length includes the header itself).
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "y11.h"
+#include "y11_wire.h"
+
+/* ---- reply / error encoding ------------------------------------------------ */
+
+/*
+ * Send a reply packet.  Stamps the client's sequence number into bytes
+ * 2-3 of the packet before queueing it.
+ */
+void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len)
+{
+    uint8_t *b = (uint8_t *)rep;
+
+    b[2] = (uint8_t)(c->sequence_number & 0xFFu);
+    b[3] = (uint8_t)((c->sequence_number >> 8) & 0xFFu);
+
+    if (y11_debug)
+        fprintf(stderr, "y11: client %d: reply seq %u len %lu\n",
+                c->slot, c->sequence_number, (unsigned long)len);
+
+    if (y11_client_send(c, rep, len) != 0)
+        c->dead = 1;            /* out of memory: drop the connection */
+}
+
+/*
+ * Send a 32-byte error packet:
+ *
+ *   1   0 (error)
+ *   1   error code
+ *   2   sequence number
+ *   4   bad resource id / value
+ *   2   minor opcode (0 for core requests)
+ *   1   major opcode
+ *   21  unused
+ */
+void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
+                             uint32_t resource_id, uint8_t major_opcode)
+{
+    y11_error err;
+
+    memset(&err, 0, sizeof(err));
+    err.type = 0;
+    err.error_code = code;
+    y11_wire_put32(&err.resource_id, resource_id);
+    err.major_opcode = major_opcode;
+
+    y11_dispatch_send_reply(c, &err, sizeof(err));
+}
+
+/* BadLength: request size mismatch (the X11 "Length" error). */
+static int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
+{
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, opcode);
+    return 0;
+}
+
+/* ---- individual request handlers ------------------------------------------- */
+
+/*
+ * QueryExtension: report BIG-REQUESTS as present with the major opcode
+ * y11 assigned to it.  Everything else is reported absent.  The reply is
+ * exactly 32 bytes with length 0 and no name echo, matching the X server.
+ */
+static int y11_dispatch_query_extension(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off)
+{
+    y11_query_extension_reply rep;
+    uint16_t name_len;
+    const uint8_t *name;
+
+    if (len - data_off < 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    name_len = y11_wire_get16(pkt + data_off);
+    if ((size_t)(len - data_off) - 4u < y11_wire_pad4(name_len))
+        return y11_dispatch_bad_length(c, pkt[0]);
+    name = pkt + data_off + 4;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+
+    if (name_len == (uint16_t)(sizeof(Y11_BIGREQ_NAME) - 1) &&
+        memcmp(name, Y11_BIGREQ_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_BIGREQ_EXT_OPCODE;
+        /* first_event / first_error stay 0: the extension defines neither. */
+    }
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * Enable (BIG-REQUESTS): the 4-byte request with minor opcode 0.  Reply
+ * with the maximum request length y11 accepts and flag the client.
+ */
+static int y11_dispatch_bigreq_enable(struct y11_client *c)
+{
+    y11_big_req_enable_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put32(&rep.max_request_size, Y11_BIGREQ_MAX_UNITS);
+
+    c->big_requests = 1;
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * ListProperties: y11 exposes no properties yet, so the reply reports an
+ * empty atom list.  Valid for any window id.
+ */
+static int y11_dispatch_list_properties(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off)
+{
+    y11_list_properties_reply rep;
+
+    if (len - data_off != 4u)   /* window id */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put32(&rep.hdr.length, 0);
+    y11_wire_put16(&rep.n_properties, 0);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * GetProperty: no properties exist on any y11 window, so the reply
+ * reports type None with format 0 and no data (the standard
+ * "property not present" reply).
+ */
+static int y11_dispatch_get_property(struct y11_client *c,
+                                     const uint8_t *pkt, size_t len,
+                                     size_t data_off)
+{
+    y11_get_property_reply rep;
+
+    if (len - data_off != 20u)  /* window, property, type, offset, length */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 0;           /* format: 0 (not present) */
+    y11_wire_put32(&rep.hdr.length, 0);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+static int y11_dispatch_get_input_focus(struct y11_client *c)
+{
+    y11_get_input_focus_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 0;           /* revert-to: RevertToNone */
+    y11_wire_put32(&rep.focus, 1u);     /* PointerRoot */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/* GetFontPath: y11 manages no font path; report an empty list. */
+static int y11_dispatch_get_font_path(struct y11_client *c)
+{
+    y11_get_font_path_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put32(&rep.hdr.length, 0);
+    y11_wire_put16(&rep.n_paths, 0);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * GetKeyboardControl: 52-byte reply (length 5) carrying the 32-byte
+ * auto-repeat bitmap.  All controls report off/zero.
+ */
+static int y11_dispatch_get_keyboard_control(struct y11_client *c)
+{
+    y11_get_keyboard_control_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 0;           /* global-auto-repeat: off */
+    y11_wire_put32(&rep.hdr.length, (sizeof(rep) - 32u) / 4u);
+    /* led_mask, key_click_percent, bell_percent, bell_pitch,
+     * bell_duration and map[] all stay zero. */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+static int y11_dispatch_get_pointer_control(struct y11_client *c)
+{
+    y11_get_pointer_control_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    y11_wire_put16(&rep.accel_numerator, 2);
+    y11_wire_put16(&rep.accel_denominator, 1);
+    y11_wire_put16(&rep.threshold, 4);
+    /* hdr.length stays 0 */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+static int y11_dispatch_get_screen_saver(struct y11_client *c)
+{
+    y11_get_screen_saver_reply rep;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    /* timeout, interval, prefer_blanking (DontPreferBlanking) and
+     * allow_exposures (DontAllowExposures) all stay zero. */
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * Resource lifecycle requests (CreateGC, ChangeGC, FreeGC, CreatePixmap,
+ * FreePixmap, ChangeWindowAttributes): y11 renders nothing in phase 1,
+ * so these are consumed without a reply; the resource ids they carry are
+ * simply accepted.
+ */
+static int y11_dispatch_accept_resource(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off)
+{
+    (void)c;
+    (void)pkt;
+    (void)data_off;
+    (void)len;
+    return 0;
+}
+
+/* ---- the dispatcher --------------------------------------------------------- */
+
+/*
+ * Dispatch one complete request packet.  pkt points at the first byte of
+ * the packet and len is its full size in bytes (a multiple of 4).
+ * Returns 0 on success, -1 on a fatal error.
+ */
+int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
+{
+    uint8_t opcode = pkt[0];
+    uint16_t wire_len = y11_wire_get16(pkt + 2);
+    size_t data_off;
+
+    /* Strict sequence rule: every request packet increments the counter. */
+    c->sequence_number++;
+
+    if (y11_debug)
+        fprintf(stderr, "y11: client %d: request %u opcode %u len %lu\n",
+                c->slot, c->sequence_number, (unsigned)opcode,
+                (unsigned long)len);
+
+    if (wire_len == 0) {
+        /* BIG-REQUESTS framing: fields start after the 8-byte header. */
+        data_off = sizeof(y11_big_req);
+    } else {
+        data_off = sizeof(y11_req);
+    }
+
+    switch (opcode) {
+    case Y11_REQ_INTERN_ATOM:
+        return y11_atom_req_intern(c, pkt, len, data_off);
+    case Y11_REQ_GET_ATOM_NAME:
+        return y11_atom_req_get_name(c, pkt, len, data_off);
+    case Y11_REQ_QUERY_EXTENSION:
+        return y11_dispatch_query_extension(c, pkt, len, data_off);
+    case Y11_REQ_LIST_PROPERTIES:
+        return y11_dispatch_list_properties(c, pkt, len, data_off);
+    case Y11_REQ_GET_PROPERTY:
+        return y11_dispatch_get_property(c, pkt, len, data_off);
+    case Y11_REQ_GET_INPUT_FOCUS:
+        return y11_dispatch_get_input_focus(c);
+    case Y11_REQ_GET_FONT_PATH:
+        return y11_dispatch_get_font_path(c);
+    case Y11_REQ_GET_KEYBOARD_CONTROL:
+        return y11_dispatch_get_keyboard_control(c);
+    case Y11_REQ_GET_POINTER_CONTROL:
+        return y11_dispatch_get_pointer_control(c);
+    case Y11_REQ_GET_SCREEN_SAVER:
+        return y11_dispatch_get_screen_saver(c);
+    case Y11_REQ_CREATE_GC:
+    case Y11_REQ_CHANGE_GC:
+    case Y11_REQ_FREE_GC:
+    case Y11_REQ_CREATE_PIXMAP:
+    case Y11_REQ_FREE_PIXMAP:
+    case Y11_REQ_CHANGE_WINDOW_ATTRIBUTES:
+        return y11_dispatch_accept_resource(c, pkt, len, data_off);
+    case Y11_REQ_NO_OPERATION:
+        return 0;               /* no reply */
+    default:
+        /* BIG-REQUESTS Enable: 4-byte request with minor opcode 0. */
+        if (opcode == (uint8_t)Y11_BIGREQ_EXT_OPCODE && pkt[1] == 0 &&
+            len == sizeof(y11_req))
+            return y11_dispatch_bigreq_enable(c);
+        y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
+        return 0;
+    }
+}

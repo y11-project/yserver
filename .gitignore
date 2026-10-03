@@ -1,0 +1,7 @@
+# Build artifacts
+*.o
+y11
+
+# Staging / release artifacts
+*.tar.gz
+*.tar.xz
