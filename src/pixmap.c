@@ -13,14 +13,17 @@
 #include "y11.h"
 #include "y11_wire.h"
 
-/* Free a pixmap object and its pixel buffer (table entry stays). */
+/* Free a pixmap object and its pixel buffer (table entry stays).
+ * Shared-memory pixmaps point into the client's segment: the memory
+ * is never freed here. */
 void y11_pixmap_destroy(void *ptr)
 {
     struct y11_pixmap *p = ptr;
 
     if (p == NULL)
         return;
-    free(p->base.pixels);
+    if (!p->is_shm)
+        free(p->base.pixels);
     free(p);
 }
 

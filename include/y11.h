@@ -50,6 +50,10 @@ typedef uint32_t yid_t;
 #define Y11_BIGREQ_EXT_OPCODE 128u      /* major opcode handed out for the extension */
 #define Y11_XTEST_NAME        "XTEST"
 #define Y11_XTEST_EXT_OPCODE  129u      /* major opcode handed out for the extension */
+#define Y11_SHM_NAME          "MIT-SHM"
+#define Y11_SHM_EXT_OPCODE    130u      /* major opcode handed out for the extension */
+#define Y11_SHM_FIRST_EVENT    64u       /* ShmCompletion lands here */
+#define Y11_SHM_FIRST_ERROR    128u      /* BadShmSeg lands here */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -153,7 +157,8 @@ enum y11_stack_mode {
 enum y11_resource_type {
     Y11_RESOURCE_WINDOW = 1,
     Y11_RESOURCE_PIXMAP = 2,
-    Y11_RESOURCE_GC     = 3
+    Y11_RESOURCE_GC     = 3,
+    Y11_RESOURCE_SHMSEG = 4
 };
 
 /* ---- drawables ------------------------------------------------------------ */
@@ -189,7 +194,21 @@ typedef struct y11_drawable {
 struct y11_pixmap {
     y11_drawable_t    base;
     struct y11_client *owner;
-    bool              is_shm;    /* MIT-SHM pixmaps are not supported yet */
+    bool              is_shm;    /* MIT-SHM pixmaps share client memory */
+};
+
+/*
+ * MIT-SHM segment: a SysV shared memory segment attached into the
+ * server address space.  Clients register one per shmget(2) segment
+ * and reference it from ShmPutImage, ShmGetImage and shared pixmaps.
+ */
+struct y11_shm_seg {
+    yid_t            id;         /* client-assigned ShmSeg resource ID */
+    struct y11_client *owner;
+    int              shmid;     /* SysV IPC shmid */
+    void             *addr;      /* shmat(2) result */
+    size_t           size;      /* segment size from shmctl(IPC_STAT) */
+    bool             read_only;
 };
 
 /* Graphics contexts hold the mutable rasterization state. */
@@ -478,6 +497,7 @@ int  y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len);
 void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len);
 void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
                              uint32_t resource_id, uint8_t major_opcode);
+int  y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode);
 
 /* ---- src/window.c -------------------------------------------------------- */
 
@@ -550,6 +570,9 @@ void  y11_resource_purge_type(int type, struct y11_client *client,
                               int (*belongs)(void *ptr,
                                              struct y11_client *client),
                               void (*destroy)(void *ptr));
+void  y11_resource_purge_type_arg(int type, void *arg,
+                                  int (*belongs)(void *ptr, void *arg),
+                                  void (*destroy)(void *ptr));
 
 /* ---- src/pixmap.c ----------------------------------------------------------- */
 
@@ -578,6 +601,8 @@ void y11_gc_purge_client(struct y11_client *c);
 /* ---- src/render.c ------------------------------------------------------------ */
 
 y11_drawable_t *y11_drawable_lookup(yid_t id);
+void y11_render_pixel_ex(y11_drawable_t *d, const struct y11_gc *gc,
+                         size_t col, size_t row, uint32_t src);
 int  y11_render_req_poly_fill_rectangle(struct y11_client *c,
                                         const uint8_t *pkt, size_t len,
                                         size_t data_off);
@@ -642,6 +667,13 @@ int  y11_grab_req_key(struct y11_client *c, const uint8_t *pkt,
 int  y11_grab_req_ungrab_key(struct y11_client *c, const uint8_t *pkt,
                              size_t len, size_t data_off);
 void y11_grab_purge_client(struct y11_client *c);
+
+/* ---- src/shm.c --------------------------------------------------------------------- */
+
+int  y11_shm_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                 size_t data_off);
+void y11_shm_purge_client(struct y11_client *c);
+void y11_shm_purge_pixmaps(struct y11_shm_seg *seg);
 
 /* ---- misc ------------------------------------------------------------------------ */
 

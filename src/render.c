@@ -42,8 +42,7 @@ y11_drawable_t *y11_drawable_lookup(yid_t id)
 
 /* ---- raster operations ----------------------------------------------------------- */
 
-/* Apply a GX raster operation to one pixel (src over dst). */
-static uint32_t y11_render_gx(uint8_t function, uint32_t src, uint32_t dst)
+/* Apply a GX raster operation to one pixel (src over dst). */static uint32_t y11_render_gx(uint8_t function, uint32_t src, uint32_t dst)
 {
     switch (function) {
     case 0:  return 0;                          /* GXclear */
@@ -74,6 +73,13 @@ static void y11_render_pixel(y11_drawable_t *d, const struct y11_gc *gc,
     uint32_t out = y11_render_gx(gc->function, src, *px);
 
     *px = (*px & ~gc->plane_mask) | (out & gc->plane_mask);
+}
+
+/* Public wrapper for other modules (MIT-SHM blits). */
+void y11_render_pixel_ex(y11_drawable_t *d, const struct y11_gc *gc,
+                         size_t col, size_t row, uint32_t src)
+{
+    y11_render_pixel(d, gc, col, row, src);
 }
 
 /*

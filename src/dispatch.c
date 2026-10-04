@@ -71,7 +71,7 @@ void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
 }
 
 /* BadLength: request size mismatch (the X11 "Length" error). */
-static int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
+int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
 {
     y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, opcode);
     return 0;
@@ -299,6 +299,13 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         memcmp(name, Y11_XTEST_NAME, name_len) == 0) {
         rep.present = 1;
         rep.major_opcode = (uint8_t)Y11_XTEST_EXT_OPCODE;
+    }
+    if (name_len == (uint16_t)(sizeof(Y11_SHM_NAME) - 1) &&
+        memcmp(name, Y11_SHM_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_SHM_EXT_OPCODE;
+        rep.first_event = (uint8_t)Y11_SHM_FIRST_EVENT;
+        rep.first_error = (uint8_t)Y11_SHM_FIRST_ERROR;
     }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
@@ -945,6 +952,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         /* XTEST extension requests carry the minor opcode in byte 1. */
         if (opcode == (uint8_t)Y11_XTEST_EXT_OPCODE)
             return y11_dispatch_xtest(c, pkt, len, data_off);
+        /* MIT-SHM extension requests carry the sub-opcode in byte 1. */
+        if (opcode == (uint8_t)Y11_SHM_EXT_OPCODE)
+            return y11_shm_req(c, pkt, len, data_off);
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
         return 0;
     }

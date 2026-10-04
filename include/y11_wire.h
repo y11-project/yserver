@@ -546,6 +546,115 @@ typedef struct {
     uint32_t pad0[5];
 } y11_get_image_reply;          /* 32 bytes + image data */
 
+/* ---- MIT-SHM extension (major opcode 130) ----------------------------------
+ *
+ * Sub-opcodes ride in byte 1; request bodies start after the 4-byte
+ * header (plus the extended header for big requests).
+ */
+
+typedef struct {
+    uint8_t  reqType;          /* extension major opcode */
+    uint8_t  shmReqType;       /* 0 = ShmQueryVersion */
+    uint16_t length;
+} y11_shm_query_version_req;   /* 4 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = sharedPixmaps */
+    uint16_t major_version;     /* bytes 8-9 */
+    uint16_t minor_version;     /* bytes 10-11 */
+    uint16_t uid;               /* bytes 12-13 */
+    uint16_t gid;               /* bytes 14-15 */
+    uint8_t  pixmap_format;     /* byte 16: ZPixmap */
+    uint8_t  pad0;              /* byte 17 */
+    uint16_t pad1;              /* bytes 18-19 */
+    uint32_t pad2[3];
+} y11_shm_query_version_reply;  /* 32 bytes */
+
+typedef struct {
+    uint8_t  reqType;
+    uint8_t  shmReqType;        /* 1 = ShmAttach */
+    uint16_t length;
+    uint32_t shmseg;            /* client-chosen ShmSeg resource ID */
+    uint32_t shmid;              /* SysV IPC segment ID */
+    uint8_t  read_only;
+    uint8_t  pad0;
+    uint16_t pad1;
+} y11_shm_attach_req;           /* 16 bytes */
+
+typedef struct {
+    uint8_t  reqType;
+    uint8_t  shmReqType;        /* 2 = ShmDetach */
+    uint16_t length;
+    uint32_t shmseg;
+} y11_shm_detach_req;           /* 8 bytes */
+
+typedef struct {
+    uint8_t  reqType;
+    uint8_t  shmReqType;        /* 3 = ShmPutImage */
+    uint16_t length;
+    uint32_t drawable;
+    uint32_t gc;
+    uint16_t total_width;      /* stride in pixels */
+    uint16_t total_height;
+    uint16_t src_x;
+    uint16_t src_y;
+    uint16_t src_width;
+    uint16_t src_height;
+    int16_t  dst_x;
+    int16_t  dst_y;
+    uint8_t  depth;
+    uint8_t  format;            /* 2 = ZPixmap */
+    uint8_t  send_event;
+    uint8_t  pad0;
+    uint32_t shmseg;
+    uint32_t offset;            /* byte offset into the segment */
+} y11_shm_put_image_req;       /* 40 bytes */
+
+typedef struct {
+    uint8_t  reqType;
+    uint8_t  shmReqType;        /* 4 = ShmGetImage */
+    uint16_t length;
+    uint32_t drawable;
+    int16_t  x, y;
+    uint16_t width, height;
+    uint32_t plane_mask;
+    uint8_t  format;            /* 2 = ZPixmap */
+    uint8_t  pad0[3];
+    uint32_t shmseg;
+    uint32_t offset;
+} y11_shm_get_image_req;       /* 32 bytes */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = depth */
+    uint32_t visual;            /* bytes 8-11 */
+    uint32_t size;               /* bytes 12-15 */
+    uint32_t pad0[4];
+} y11_shm_get_image_reply;      /* 32 bytes, image data lands in shm */
+
+typedef struct {
+    uint8_t  reqType;
+    uint8_t  shmReqType;        /* 5 = ShmCreatePixmap */
+    uint16_t length;
+    uint32_t pid;               /* client-chosen pixmap resource ID */
+    uint32_t drawable;          /* screen reference */
+    uint16_t width, height;
+    uint8_t  depth;
+    uint8_t  pad0[3];
+    uint32_t shmseg;
+    uint32_t offset;
+} y11_shm_create_pixmap_req;   /* 28 bytes */
+
+typedef struct {
+    uint32_t pad00;             /* type, bpad0, sequence */
+    uint32_t drawable;          /* bytes 4-7 */
+    uint16_t minor_event;       /* bytes 8-9: ShmPutImage */
+    uint8_t  major_event;       /* byte 10: extension opcode */
+    uint8_t  bpad1;             /* byte 11 */
+    uint32_t shmseg;            /* bytes 12-15 */
+    uint32_t offset;             /* bytes 16-19 */
+    uint32_t pad0[3];
+} y11_shm_completion_event;    /* 32 bytes */
+
 typedef struct {
     y11_reply_hdr hdr;
     uint16_t exact_red;          /* bytes 8-9 */
@@ -762,6 +871,14 @@ typedef char y11_wire_chk_copy_area_req[(sizeof(y11_copy_area_req) == 28) ? 1 : 
 typedef char y11_wire_chk_put_image_req[(sizeof(y11_put_image_req) == 24) ? 1 : -1];
 typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : -1];
 typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_shm_query_version_reply[(sizeof(y11_shm_query_version_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_shm_attach_req[(sizeof(y11_shm_attach_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_shm_detach_req[(sizeof(y11_shm_detach_req) == 8) ? 1 : -1];
+typedef char y11_wire_chk_shm_put_image_req[(sizeof(y11_shm_put_image_req) == 40) ? 1 : -1];
+typedef char y11_wire_chk_shm_get_image_req[(sizeof(y11_shm_get_image_req) == 32) ? 1 : -1];
+typedef char y11_wire_chk_shm_get_image_reply[(sizeof(y11_shm_get_image_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_shm_create_pixmap_req[(sizeof(y11_shm_create_pixmap_req) == 28) ? 1 : -1];
+typedef char y11_wire_chk_shm_completion_event[(sizeof(y11_shm_completion_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_clear_area_req[(sizeof(y11_clear_area_req) == 16) ? 1 : -1];
 typedef char y11_wire_chk_key_button_event[(sizeof(y11_key_button_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_crossing_event[(sizeof(y11_crossing_event) == 32) ? 1 : -1];

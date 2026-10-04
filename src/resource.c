@@ -100,14 +100,14 @@ void y11_resource_remove(yid_t id)
 }
 
 /*
- * Drop every resource of `type` that `belongs` reports as owned by
- * `client`: destroy frees the object, the table entry is removed here.
- * Used at client disconnect to release pixmaps and graphics contexts.
+ * Drop every resource of `type` that `belongs` reports as matching
+ * `arg`: destroy frees the object, the table entry is removed here.
+ * Used at client disconnect (pixmaps, GCs, shm segments) and when a
+ * shared memory segment detaches (its shared pixmaps).
  */
-void y11_resource_purge_type(int type, struct y11_client *client,
-                             int (*belongs)(void *ptr,
-                                            struct y11_client *client),
-                             void (*destroy)(void *ptr))
+void y11_resource_purge_type_arg(int type, void *arg,
+                                  int (*belongs)(void *ptr, void *arg),
+                                  void (*destroy)(void *ptr))
 {
     unsigned i;
 
@@ -118,7 +118,7 @@ void y11_resource_purge_type(int type, struct y11_client *client,
             struct y11_resource *r = *link;
             struct y11_resource *next = r->next;
 
-            if (r->type == type && belongs(r->ptr, client)) {
+            if (r->type == type && belongs(r->ptr, arg)) {
                 *link = next;
                 destroy(r->ptr);
                 free(r);
@@ -127,4 +127,18 @@ void y11_resource_purge_type(int type, struct y11_client *client,
             }
         }
     }
+}
+
+/*
+ * Drop every resource of `type` that `belongs` reports as owned by
+ * `client`: destroy frees the object, the table entry is removed here.
+ * Used at client disconnect to release pixmaps and graphics contexts.
+ */
+void y11_resource_purge_type(int type, struct y11_client *client,
+                             int (*belongs)(void *ptr,
+                                            struct y11_client *client),
+                             void (*destroy)(void *ptr))
+{
+    y11_resource_purge_type_arg(type, client,
+                                (int (*)(void *, void *))belongs, destroy);
 }
