@@ -175,6 +175,62 @@ static int y11_dispatch_translate_coords(struct y11_client *c,
     return 0;
 }
 
+/*
+ * SendEvent (opcode 25): deliver a client-crafted 32-byte event.
+ * Destination 0 is the window under the pointer, 1 the input focus;
+ * when propagation is set and no client selected the mask on the
+ * destination, the event walks up the parent chain with the event
+ * window rewritten at each step.  The send-event flag (byte 0 bit 7)
+ * marks the packet on the wire.
+ */
+static int y11_dispatch_send_event(struct y11_client *c, const uint8_t *pkt,
+                                   size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t destination, event_mask;
+    uint8_t ev[32];
+    struct y11_window *win;
+
+    if (len - data_off != 40u)  /* destination, mask, 32-byte event */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    destination = y11_wire_get32(body + 0);
+    event_mask = y11_wire_get32(body + 4);
+    if ((event_mask & ~Y11_MASK_ALL_VALID) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, event_mask, pkt[0]);
+        return 0;
+    }
+    memcpy(ev, body + 8, sizeof(ev));
+    ev[0] |= 0x80;              /* send-event flag */
+
+    if (destination == 0)       /* PointerWindow */
+        win = y11_window_at_point(y11_input_pointer()->root_x,
+                                  y11_input_pointer()->root_y);
+    else if (destination == 1)  /* InputFocus */
+        win = y11_window_get(y11_input_keyboard()->focus_window);
+    else
+        win = y11_window_get(destination);
+    if (win == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW, destination, pkt[0]);
+        return 0;
+    }
+
+    for (; win != NULL; win = win->parent) {
+        const struct y11_event_sub *sub;
+
+        y11_wire_put32(ev + 4, win->id);   /* event window field */
+        for (sub = win->event_subs; sub != NULL; sub = sub->next) {
+            if ((sub->mask & event_mask) != 0) {
+                y11_event_dispatch32(sub->client, ev, sizeof(ev));
+                return 0;
+            }
+        }
+        if (pkt[1] == 0)         /* no propagation */
+            break;
+    }
+    return 0;                   /* no reply */
+}
+
 /* ---- individual request handlers ------------------------------------------- */
 
 /*
@@ -660,6 +716,8 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_window_req_configure(c, pkt, len, data_off);
     case Y11_REQ_GET_GEOMETRY:
         return y11_window_req_get_geometry(c, pkt, len, data_off);
+    case Y11_REQ_SEND_EVENT:
+        return y11_dispatch_send_event(c, pkt, len, data_off);
     case Y11_REQ_CREATE_PIXMAP:
         return y11_pixmap_req_create(c, pkt, len, data_off);
     case Y11_REQ_FREE_PIXMAP:
