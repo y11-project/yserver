@@ -2,7 +2,7 @@
 # POSIX make: no GNU extensions (no wildcard, no patsubst, no :=).
 
 CC       = cc
-CFLAGS   = -std=c99 -pedantic -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L
+CFLAGS   = -std=c99 -pedantic -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L $(DRM_INCS)
 LDFLAGS  =
 
 # OS detection via uname -s.  The "!=" shell-assignment operator is
@@ -15,8 +15,17 @@ FreeBSD_LIBS = -L/usr/local/lib
 INCS      = -Iinclude $($(UNAME_S)_INCS)
 LIBS      = $($(UNAME_S)_LIBS)
 
-HDRS = include/y11.h include/y11_wire.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o
+# DRM/KMS and seat: libdrm via pkg-config (headers + lib), libseat via its
+# vendored header (include/libseat.h) linked by soname where the dev package
+# is absent.  The "!=" shell assignment is plain BSD/GNU make, not $(shell).
+DRM_INCS  != pkg-config --cflags libdrm 2>/dev/null || echo
+DRM_LIBS  != pkg-config --libs libdrm 2>/dev/null || echo -ldrm
+Linux_SEATLIB  = -l:libseat.so.1
+FreeBSD_SEATLIB = -lseat
+SEATLIB  = $($(UNAME_S)_SEATLIB)
+
+HDRS = include/y11.h include/y11_wire.h include/y11_drm.h include/libseat.h
+OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -25,7 +34,7 @@ DESTDIR =
 all: y11
 
 y11: $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(DRM_LIBS) $(SEATLIB)
 
 src/main.o: src/main.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/main.c -o $@
@@ -65,6 +74,15 @@ src/input.o: src/input.c $(HDRS)
 
 src/grab.o: src/grab.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/grab.c -o $@
+
+src/session.o: src/session.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/session.c -o $@
+
+src/drm.o: src/drm.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/drm.c -o $@
+
+src/scanout.o: src/scanout.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/scanout.c -o $@
 
 clean:
 	rm -f $(OBJS) y11

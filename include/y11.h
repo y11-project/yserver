@@ -447,6 +447,8 @@ struct y11_window {
 struct y11_server {
     int listen_fd;              /* listener on socket_path */
     struct y11_client *clients[Y11_MAX_CLIENTS];
+    int seat_fd;                /* libseat connection, or -1 when headless */
+    int drm_fd;                 /* DRM card node, or -1 when headless */
     char socket_path[Y11_SOCK_PATH_MAX];    /* primary socket, e.g. /tmp/.X11-unix/X0 */
     char link_path[Y11_SOCK_PATH_MAX];      /* alias symlink, e.g. /tmp/.y11-unix/Y0 */
 };
@@ -645,6 +647,15 @@ void y11_grab_purge_client(struct y11_client *c);
 
 unsigned y11_popcount32(uint32_t v);
 uint32_t y11_input_event_time(void);
+
+/* Screen geometry: 1920x1080 defaults, overridden by the hardware
+ * output mode when DRM/KMS scanout is available. */
+extern uint16_t y11_screen_width;
+extern uint16_t y11_screen_height;
+
+/* Scanout hooks (src/scanout.c): no-ops without hardware. */
+void y11_scanout_mark_dirty(int32_t x, int32_t y, uint32_t w, uint32_t h);
+void y11_scanout_move_cursor(int32_t x, int32_t y);
 
 /* ---- src/input.c ----------------------------------------------------------------- */
 
