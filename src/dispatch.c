@@ -231,6 +231,39 @@ static int y11_dispatch_send_event(struct y11_client *c, const uint8_t *pkt,
     return 0;                   /* no reply */
 }
 
+/*
+ * GetModifierMapping (opcode 119): report two keycodes per modifier in
+ * the standard order Shift, Lock, Control, Mod1..Mod5, drawn from the
+ * evdev keycodes input.c uses for its modifier state.
+ */
+static int y11_dispatch_get_modifier_mapping(struct y11_client *c,
+                                              const uint8_t *pkt, size_t len,
+                                              size_t data_off)
+{
+    static const uint8_t keys[16] = {
+        50, 62,                 /* Shift */
+        66, 0,                  /* Lock */
+        37, 105,                /* Control */
+        64, 108,                /* Mod1 (Alt) */
+        77, 0,                  /* Mod2 (NumLock) */
+        0, 0,                   /* Mod3 */
+        133, 134                /* Mod4 (Super) */
+    };
+    y11_get_keyboard_mapping_reply rep;
+
+    (void)pkt;
+    (void)len;
+    (void)data_off;
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = 2;           /* keysyms per keycode */
+    y11_wire_put32(&rep.hdr.length, sizeof(keys) / 4u);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    y11_client_send(c, keys, sizeof(keys));
+    return 0;
+}
+
 /* ---- individual request handlers ------------------------------------------- */
 
 /*
@@ -261,6 +294,11 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         rep.present = 1;
         rep.major_opcode = (uint8_t)Y11_BIGREQ_EXT_OPCODE;
         /* first_event / first_error stay 0: the extension defines neither. */
+    }
+    if (name_len == (uint16_t)(sizeof(Y11_XTEST_NAME) - 1) &&
+        memcmp(name, Y11_XTEST_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_XTEST_EXT_OPCODE;
     }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
@@ -659,6 +697,84 @@ static int y11_dispatch_accept_resource(struct y11_client *c,
     return 0;
 }
 
+/*
+ * XTEST extension (major opcode 129): the input injection path.  Tools
+ * like xdotool drive the keyboard and pointer through FakeInput, which
+ * feeds the same y11_input_* entry points a libinput backend would.
+ *
+ * Requests (minor opcode = byte 1):
+ *   0 GetVersion  - reply with the extension version (2.2)
+ *   1 CompareCursor - reply same=1
+ *   2 FakeInput   - type/detail ride in the request body
+ *   3 GrabControl - no reply, ignored (y11 is never impervious)
+ */
+static int y11_dispatch_xtest(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+
+    switch (pkt[1]) {
+    case 0: {                   /* GetVersion */
+        y11_get_input_focus_reply rep;  /* same 32-byte reply shape */
+
+        if (len - data_off != 4u)
+            return y11_dispatch_bad_length(c, pkt[0]);
+        memset(&rep, 0, sizeof(rep));
+        rep.hdr.type = 1;       /* X_Reply */
+        rep.hdr.pad0 = 2;       /* major version */
+        y11_wire_put32(&rep.hdr.length, 0);
+        y11_wire_put16((uint8_t *)&rep + 8, 2);     /* minor version */
+        y11_dispatch_send_reply(c, &rep, sizeof(rep));
+        return 0;
+    }
+    case 1: {                   /* CompareCursor */
+        y11_grab_reply rep;
+
+        if (len - data_off != 8u)
+            return y11_dispatch_bad_length(c, pkt[0]);
+        memset(&rep, 0, sizeof(rep));
+        rep.hdr.type = 1;       /* X_Reply */
+        rep.hdr.pad0 = 1;       /* same */
+        y11_dispatch_send_reply(c, &rep, sizeof(rep));
+        return 0;
+    }
+    case 2: {                   /* FakeInput */
+        uint8_t type, detail;
+        int16_t root_x, root_y;
+
+        if (len - data_off != 32u)
+            return y11_dispatch_bad_length(c, pkt[0]);
+        type = body[0];
+        detail = body[1];
+        root_x = (int16_t)y11_wire_get16(body + 20);
+        root_y = (int16_t)y11_wire_get16(body + 22);
+
+        switch (type) {
+        case Y11_EVT_KEY_PRESS:
+        case Y11_EVT_KEY_RELEASE:
+            y11_input_key(type == Y11_EVT_KEY_PRESS, detail);
+            break;
+        case Y11_EVT_BUTTON_PRESS:
+        case Y11_EVT_BUTTON_RELEASE:
+            y11_input_button(type == Y11_EVT_BUTTON_PRESS, detail);
+            break;
+        case Y11_EVT_MOTION_NOTIFY:
+            y11_input_motion_abs(root_x, root_y);
+            break;
+        default:
+            y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, type, pkt[0]);
+            break;
+        }
+        return 0;               /* no reply */
+    }
+    case 3:                     /* GrabControl: accepted, ignored */
+        return 0;
+    default:
+        y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, pkt[1], pkt[0]);
+        return 0;
+    }
+}
+
 /* ---- the dispatcher --------------------------------------------------------- */
 
 /*
@@ -764,6 +880,10 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_get_input_focus(c);
     case Y11_REQ_GET_KEYBOARD_MAPPING:
         return y11_input_req_get_keyboard_mapping(c, pkt, len, data_off);
+    case Y11_REQ_GET_MODIFIER_MAPPING:
+        return y11_dispatch_get_modifier_mapping(c, pkt, len, data_off);
+    case Y11_REQ_CHANGE_KEYBOARD_MAPPING:
+        return y11_input_req_change_keyboard_mapping(c, pkt, len, data_off);
     case Y11_REQ_QUERY_POINTER:
         return y11_dispatch_query_pointer(c, pkt, len, data_off);
     case Y11_REQ_TRANSLATE_COORDS:
@@ -822,6 +942,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         if (opcode == (uint8_t)Y11_BIGREQ_EXT_OPCODE && pkt[1] == 0 &&
             len == sizeof(y11_req))
             return y11_dispatch_bigreq_enable(c);
+        /* XTEST extension requests carry the minor opcode in byte 1. */
+        if (opcode == (uint8_t)Y11_XTEST_EXT_OPCODE)
+            return y11_dispatch_xtest(c, pkt, len, data_off);
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
         return 0;
     }

@@ -48,6 +48,8 @@ typedef uint32_t yid_t;
 
 #define Y11_BIGREQ_NAME       "BIG-REQUESTS"
 #define Y11_BIGREQ_EXT_OPCODE 128u      /* major opcode handed out for the extension */
+#define Y11_XTEST_NAME        "XTEST"
+#define Y11_XTEST_EXT_OPCODE  129u      /* major opcode handed out for the extension */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -280,7 +282,9 @@ enum y11_req_opcode {
     Y11_REQ_STORE_NAMED_COLOR        = 90,
     Y11_REQ_QUERY_COLORS             = 91,
     Y11_REQ_LOOKUP_COLOR             = 92,
+    Y11_REQ_CHANGE_KEYBOARD_MAPPING    = 100,
     Y11_REQ_GET_KEYBOARD_CONTROL     = 103,
+    Y11_REQ_GET_MODIFIER_MAPPING     = 119,
     Y11_REQ_GET_KEYBOARD_MAPPING     = 101,
     Y11_REQ_GET_POINTER_CONTROL      = 106,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
@@ -658,6 +662,9 @@ int  y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
 int  y11_input_req_get_keyboard_mapping(struct y11_client *c,
                                        const uint8_t *pkt, size_t len,
                                        size_t data_off);
+int  y11_input_req_change_keyboard_mapping(struct y11_client *c,
+                                           const uint8_t *pkt, size_t len,
+                                           size_t data_off);
 
 /* ---- src/events.c (hit-testing) --------------------------------------------------- */
 
