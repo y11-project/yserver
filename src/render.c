@@ -502,7 +502,7 @@ int y11_render_req_get_image(struct y11_client *c, const uint8_t *pkt,
     size_t data_bytes, row, col;
     uint8_t *out;
 
-    if (len - data_off != 20u)
+    if (len - data_off != 16u)  /* drawable, x, y, w, h, plane mask */
         goto badlength;
 
     format = pkt[1];

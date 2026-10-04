@@ -953,7 +953,7 @@ int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
     uint8_t exposures;
 
     (void)c;
-    if (len - data_off != 16u)
+    if (len - data_off != 12u)  /* window, x, y, width, height */
         goto badlength;
     window_id = y11_wire_get32(body + 0);
     x = (int16_t)y11_wire_get16(body + 4);
