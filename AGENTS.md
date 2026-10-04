@@ -51,6 +51,17 @@ solid fills, blits and image transfer).
 - A foreign X server holds the abstract `:0` socket, which libX11/XCB
   prefers, so run the daemon on a free display (`./y11 5`) and test
   with `DISPLAY=:5`.
+- This host has real DRM hardware (`/dev/dri/card1`, 2560x1600@60) but
+  the user's sway session owns DRM master, so y11 cannot take scanout
+  here: it logs "no seat available" and runs headless. All hardware
+  paths (seat, KMS discovery, dumb buffers, master gate) are exercised
+  by the `ycard` harness in `/tmp/opencode`; dumb-buffer ioctls work
+  unprivileged, modesetting correctly fails with EACCES while another
+  display server holds master. Never steal DRM master from the running
+  session.
+- libseat has no dev package installed: the API header is vendored at
+  include/libseat.h and the runtime is linked by soname
+  (`-l:libseat.so.1`).
 - Client harnesses are built from source into `/tmp/opencode` (the
   approved temp area gets wiped occasionally; rebuild as needed):
   `xwininfo` (needs its libxcb-shape stub), `xsetroot`, and `yimg`
