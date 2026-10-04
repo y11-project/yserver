@@ -22,10 +22,17 @@
 
 #include "y11.h"
 #include "y11_wire.h"
+#include "y11_drm.h"
 
 int y11_debug;                  /* set from $Y11_DEBUG in main() */
 
 static volatile sig_atomic_t y11_g_running = 1;
+
+static struct y11_session y11_g_session;
+
+/* Poll map sentinels: client slots are >= 0. */
+#define Y11_MAP_SEAT (-2)
+#define Y11_MAP_DRM  (-3)
 
 /* ---- signals --------------------------------------------------------------- */
 
@@ -176,8 +183,8 @@ static void y11_server_accept(struct y11_server *srv)
 
 void y11_server_run(struct y11_server *srv)
 {
-    struct pollfd fds[Y11_MAX_CLIENTS + 1];
-    int map[Y11_MAX_CLIENTS + 1];   /* poll index -> client slot */
+    struct pollfd fds[Y11_MAX_CLIENTS + 3];
+    int map[Y11_MAX_CLIENTS + 3];   /* poll index -> client slot */
 
     while (y11_g_running) {
         nfds_t n = 1;
@@ -187,6 +194,21 @@ void y11_server_run(struct y11_server *srv)
         fds[0].events = POLLIN;
         fds[0].revents = 0;
         map[0] = -1;
+
+        if (srv->seat_fd >= 0) {
+            fds[n].fd = srv->seat_fd;
+            fds[n].events = POLLIN;
+            fds[n].revents = 0;
+            map[n] = Y11_MAP_SEAT;
+            n++;
+        }
+        if (srv->drm_fd >= 0) {
+            fds[n].fd = srv->drm_fd;
+            fds[n].events = POLLIN;
+            fds[n].revents = 0;
+            map[n] = Y11_MAP_DRM;
+            n++;
+        }
 
         for (i = 0; i < Y11_MAX_CLIENTS; i++) {
             struct y11_client *c = srv->clients[i];
@@ -217,6 +239,19 @@ void y11_server_run(struct y11_server *srv)
 
             if (fds[i].revents == 0)
                 continue;
+
+            /* Extra (non-client) poll entries. */
+            if (map[i] == Y11_MAP_SEAT) {
+                /* Seat events: enable/disable callbacks (VT switches). */
+                y11_session_dispatch(&y11_g_session);
+                continue;
+            }
+            if (map[i] == Y11_MAP_DRM) {
+                /* Page flip completions arrive at VBlank. */
+                y11_drm_handle_events(srv->drm_fd);
+                continue;
+            }
+
             c = srv->clients[map[i]];
             if (c == NULL)
                 continue;
@@ -249,6 +284,9 @@ void y11_server_run(struct y11_server *srv)
             if (c->dead || (c->wants_close && c->out_len == 0))
                 y11_client_destroy(srv, c);
         }
+
+        /* Present accumulated root damage at the next VBlank. */
+        y11_scanout_flush();
     }
 }
 
@@ -274,6 +312,8 @@ int y11_server_init(struct y11_server *srv, unsigned display)
 {
     memset(srv, 0, sizeof(*srv));
     srv->listen_fd = -1;
+    srv->seat_fd = -1;
+    srv->drm_fd = -1;
 
     if (snprintf(srv->socket_path, sizeof(srv->socket_path),
                  "%s/X%u", Y11_SOCKET_DIR, display) >=
@@ -325,6 +365,24 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /*
+     * Hardware path: acquire the seat through libseat, discover KMS
+     * outputs, size the root window from the output mode, then put
+     * scanout and the cursor on the CRTC.  Any failure along the way
+     * (no seat manager, another display server holds DRM master)
+     * falls back to the headless software screen.
+     */
+    if (y11_session_init(&y11_g_session) == 0) {
+        srv.seat_fd = y11_g_session.seat_fd;
+        if (y11_drm_init(&y11_g_session) == 0) {
+            struct y11_output *out = y11_drm_outputs();
+
+            y11_screen_width = (uint16_t)out->mode.hdisplay;
+            y11_screen_height = (uint16_t)out->mode.vdisplay;
+            srv.drm_fd = y11_g_session.drm_card_fd;
+        }
+    }
+
     if (y11_window_init() != 0) {
         fprintf(stderr, "y11: cannot create the root window\n");
         y11_server_shutdown(&srv);
@@ -340,10 +398,31 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /*
+     * Hardware scanout comes up after the root window exists: it needs
+     * the root backbuffer as the composition source and DRM master
+     * from the seat.  Failing here just means the software screen.
+     */
+    if (srv.drm_fd >= 0) {
+        struct y11_window *root = y11_window_get(Y11_SCREEN_ROOT);
+
+        if (root != NULL &&
+            y11_scanout_init(&root->drawable) != 0) {
+            fprintf(stderr, "y11: hardware scanout unavailable (%s),"
+                    " running headless\n", strerror(errno));
+            srv.drm_fd = -1;
+            y11_drm_shutdown();
+        }
+    }
+
     fprintf(stderr, "y11: listening on %s (%s -> %s)\n",
             srv.socket_path, srv.link_path, srv.socket_path);
 
     y11_server_run(&srv);
+
+    y11_scanout_shutdown();
+    y11_drm_shutdown();
+    y11_session_shutdown(&y11_g_session);
 
     y11_server_shutdown(&srv);
     y11_input_shutdown();
