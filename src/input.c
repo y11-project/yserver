@@ -142,8 +142,8 @@ int y11_input_init(void)
     memset(&y11_keyboard_state, 0, sizeof(y11_keyboard_state));
     gettimeofday(&y11_input_start, NULL);
 
-    y11_pointer_state.root_x = (int16_t)(Y11_SCREEN_WIDTH / 2);
-    y11_pointer_state.root_y = (int16_t)(Y11_SCREEN_HEIGHT / 2);
+    y11_pointer_state.root_x = (int16_t)(y11_screen_width / 2);
+    y11_pointer_state.root_y = (int16_t)(y11_screen_height / 2);
     y11_pointer_state.focus_window = Y11_SCREEN_ROOT;
     y11_keyboard_state.focus_window = 1;   /* PointerRoot */
     y11_keyboard_state.revert_to = 1;      /* RevertToPointerRoot */
@@ -343,15 +343,18 @@ static void y11_input_do_motion(int16_t x, int16_t y)
         x = 0;
     if (y < 0)
         y = 0;
-    if (x >= (int16_t)Y11_SCREEN_WIDTH)
-        x = (int16_t)(Y11_SCREEN_WIDTH - 1);
-    if (y >= (int16_t)Y11_SCREEN_HEIGHT)
-        y = (int16_t)(Y11_SCREEN_HEIGHT - 1);
+    if (x >= (int16_t)y11_screen_width)
+        x = (int16_t)(y11_screen_width - 1);
+    if (y >= (int16_t)y11_screen_height)
+        y = (int16_t)(y11_screen_height - 1);
     if (grab != NULL)
         y11_grab_confine(&x, &y);
 
     y11_pointer_state.root_x = x;
     y11_pointer_state.root_y = y;
+
+    /* The hardware cursor follows without touching the scanout. */
+    y11_scanout_move_cursor(x, y);
 
     if (grab != NULL) {
         /* An active grab takes strict priority: no crossing events. */

@@ -280,8 +280,8 @@ static int y11_client_send_setup_success(struct y11_client *c)
     y11_wire_put32(&screen.white_pixel, 0x00FFFFFFu);
     y11_wire_put32(&screen.black_pixel, 0x00000000u);
     y11_wire_put32(&screen.current_input_mask, 0u);
-    y11_wire_put16(&screen.width_in_pixels, (uint16_t)Y11_SCREEN_WIDTH);
-    y11_wire_put16(&screen.height_in_pixels, (uint16_t)Y11_SCREEN_HEIGHT);
+    y11_wire_put16(&screen.width_in_pixels, y11_screen_width);
+    y11_wire_put16(&screen.height_in_pixels, y11_screen_height);
     y11_wire_put16(&screen.width_in_mm, (uint16_t)Y11_SCREEN_MM_WIDTH);
     y11_wire_put16(&screen.height_in_mm, (uint16_t)Y11_SCREEN_MM_HEIGHT);
     y11_wire_put16(&screen.min_installed_maps, 1);

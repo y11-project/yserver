@@ -118,5 +118,10 @@ void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
     win = y11_window_get(d->id);
     if (win == NULL)
         return;
+
+    /* Root pixels feed the hardware scanout. */
+    if (win->id == Y11_SCREEN_ROOT)
+        y11_scanout_mark_dirty(x, y, w, h);
+
     y11_damage_descendants(win, x, y, (int32_t)w, (int32_t)h);
 }

@@ -32,6 +32,10 @@ static struct y11_window *y11_root;     /* the screen's root window */
 
 static void y11_window_destroy_tree(struct y11_window *win);
 
+/* Screen geometry: defaults, overridden by the hardware output mode. */
+uint16_t y11_screen_width = (uint16_t)Y11_SCREEN_WIDTH;
+uint16_t y11_screen_height = (uint16_t)Y11_SCREEN_HEIGHT;
+
 /* ---- small helpers --------------------------------------------------------- */
 
 unsigned y11_popcount32(uint32_t v)
@@ -471,8 +475,8 @@ int y11_window_init(void)
     root->owner = NULL;                 /* server-owned */
     root->x = 0;
     root->y = 0;
-    root->width = (uint16_t)Y11_SCREEN_WIDTH;
-    root->height = (uint16_t)Y11_SCREEN_HEIGHT;
+    root->width = y11_screen_width;
+    root->height = y11_screen_height;
     root->border_width = 0;
     root->abs_x = 0;
     root->abs_y = 0;
@@ -1012,6 +1016,10 @@ int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
         y11_damage_mapped(win, x, y, w, h);
     else
         y11_damage_drawn(&win->drawable, x, y, w, h);
+
+    /* Clearing the root window repaints the hardware scanout. */
+    if (win->id == Y11_SCREEN_ROOT)
+        y11_scanout_mark_dirty(x, y, w, h);
     return 0;                   /* no reply */
 
 badlength:
