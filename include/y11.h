@@ -589,9 +589,58 @@ void y11_damage_mapped(struct y11_window *win, int32_t x, int32_t y,
 void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
                       uint32_t w, uint32_t h);
 
+/* ---- grabs ------------------------------------------------------------------ */
+
+/*
+ * Active grab state (pointer or keyboard): all device events are
+ * diverted to the grabbing client's window until the grab ends.
+ */
+typedef struct y11_grab {
+    bool              active;
+    struct y11_client *client;
+    yid_t             grab_window;
+    yid_t             confine_to;     /* clamp the cursor inside, or 0 */
+    yid_t             cursor_id;
+    uint16_t          event_mask;
+    bool              owner_events;
+    uint8_t           pointer_mode;   /* Synchronous 0, Asynchronous 1 */
+    uint8_t           keyboard_mode;
+    bool              passive;       /* implicit grab from GrabButton/Key */
+    uint32_t          time;
+} y11_grab_t;
+
+/* ---- src/grab.c ------------------------------------------------------------------ */
+
+const y11_grab_t *y11_grab_pointer_active(void);
+const y11_grab_t *y11_grab_keyboard_active(void);
+struct y11_client *y11_grab_match_button(uint8_t button, uint16_t state);
+struct y11_client *y11_grab_match_key(uint8_t key, uint16_t state);
+void y11_grab_button_release_check(void);
+void y11_grab_confine(int16_t *x, int16_t *y);
+void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
+                      uint32_t mask_bit);
+int  y11_grab_req_pointer(struct y11_client *c, const uint8_t *pkt,
+                          size_t len, size_t data_off);
+int  y11_grab_req_ungrab_pointer(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off);
+int  y11_grab_req_button(struct y11_client *c, const uint8_t *pkt,
+                         size_t len, size_t data_off);
+int  y11_grab_req_ungrab_button(struct y11_client *c, const uint8_t *pkt,
+                                size_t len, size_t data_off);
+int  y11_grab_req_keyboard(struct y11_client *c, const uint8_t *pkt,
+                           size_t len, size_t data_off);
+int  y11_grab_req_ungrab_keyboard(struct y11_client *c, const uint8_t *pkt,
+                                  size_t len, size_t data_off);
+int  y11_grab_req_key(struct y11_client *c, const uint8_t *pkt,
+                      size_t len, size_t data_off);
+int  y11_grab_req_ungrab_key(struct y11_client *c, const uint8_t *pkt,
+                             size_t len, size_t data_off);
+void y11_grab_purge_client(struct y11_client *c);
+
 /* ---- misc ------------------------------------------------------------------------ */
 
 unsigned y11_popcount32(uint32_t v);
+uint32_t y11_input_event_time(void);
 
 /* ---- src/input.c ----------------------------------------------------------------- */
 

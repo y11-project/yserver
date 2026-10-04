@@ -59,6 +59,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     /* And its pixmaps and graphics contexts. */
     y11_pixmap_purge_client(c);
     y11_gc_purge_client(c);
+    /* And its input grabs. */
+    y11_grab_purge_client(c);
     if (c->fd >= 0)
         close(c->fd);
     free(c->in_buf);

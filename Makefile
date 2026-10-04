@@ -16,7 +16,7 @@ INCS      = -Iinclude $($(UNAME_S)_INCS)
 LIBS      = $($(UNAME_S)_LIBS)
 
 HDRS = include/y11.h include/y11_wire.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o
+OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -62,6 +62,9 @@ src/damage.o: src/damage.c $(HDRS)
 
 src/input.o: src/input.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/input.c -o $@
+
+src/grab.o: src/grab.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/grab.c -o $@
 
 clean:
 	rm -f $(OBJS) y11

@@ -115,7 +115,7 @@ static const struct {
 
 /* ---- timestamps ---------------------------------------------------------- */
 
-static uint32_t y11_input_now(void)
+uint32_t y11_input_event_time(void)
 {
     struct timeval tv;
 
@@ -174,7 +174,7 @@ static void y11_input_fill_device(y11_key_button_event *ev, uint8_t type,
         b[0] = type;
         b[1] = detail;
     }
-    y11_wire_put32(&ev->time, y11_input_now());
+    y11_wire_put32(&ev->time, y11_input_event_time());
     y11_wire_put32(&ev->root, Y11_SCREEN_ROOT);
     y11_wire_put32(&ev->event, event_win->id);
     child = NULL;
@@ -281,7 +281,7 @@ static void y11_input_crossing(uint8_t type, uint8_t detail,
             b[0] = type;
             b[1] = detail;
         }
-        y11_wire_put32(&ev.time, y11_input_now());
+        y11_wire_put32(&ev.time, y11_input_event_time());
         y11_wire_put32(&ev.root, Y11_SCREEN_ROOT);
         y11_wire_put32(&ev.event, win->id);
         y11_wire_put32(&ev.child, 0);     /* pointer is in this window */
@@ -337,6 +337,7 @@ static void y11_input_update_focus_window(struct y11_window *hit)
 static void y11_input_do_motion(int16_t x, int16_t y)
 {
     struct y11_window *hit;
+    const y11_grab_t *grab = y11_grab_pointer_active();
 
     if (x < 0)
         x = 0;
@@ -346,9 +347,18 @@ static void y11_input_do_motion(int16_t x, int16_t y)
         x = (int16_t)(Y11_SCREEN_WIDTH - 1);
     if (y >= (int16_t)Y11_SCREEN_HEIGHT)
         y = (int16_t)(Y11_SCREEN_HEIGHT - 1);
+    if (grab != NULL)
+        y11_grab_confine(&x, &y);
 
     y11_pointer_state.root_x = x;
     y11_pointer_state.root_y = y;
+
+    if (grab != NULL) {
+        /* An active grab takes strict priority: no crossing events. */
+        y11_grab_deliver(grab, Y11_EVT_MOTION_NOTIFY, 0,
+                         Y11_MASK_POINTER_MOTION);
+        return;
+    }
 
     hit = y11_window_at_point(x, y);
     y11_input_update_focus_window(hit);
@@ -374,6 +384,7 @@ void y11_input_button(int press, uint8_t button)
 {
     uint16_t bit;
     struct y11_window *hit;
+    const y11_grab_t *grab = y11_grab_pointer_active();
 
     if (button < 1 || button > 5)
         return;
@@ -383,6 +394,32 @@ void y11_input_button(int press, uint8_t button)
         y11_pointer_state.button_mask |= bit;
     else
         y11_pointer_state.button_mask &= (uint16_t)~bit;
+
+    if (grab != NULL) {
+        /* An active grab owns all button events. */
+        if (press)
+            y11_grab_deliver(grab, Y11_EVT_BUTTON_PRESS, button,
+                             Y11_MASK_BUTTON_PRESS);
+        else
+            y11_grab_deliver(grab, Y11_EVT_BUTTON_RELEASE, button,
+                             Y11_MASK_BUTTON_RELEASE);
+        y11_grab_button_release_check();
+        return;
+    }
+
+    if (press) {
+        /*
+         * A passive grab (GrabButton) matching the button and modifier
+         * state activates implicitly and receives the press.
+         */
+        if (y11_grab_match_button(button,
+                                  y11_keyboard_state.modifier_mask) != NULL) {
+            y11_grab_deliver(y11_grab_pointer_active(),
+                             Y11_EVT_BUTTON_PRESS, button,
+                             Y11_MASK_BUTTON_PRESS);
+            return;
+        }
+    }
 
     hit = y11_window_get(y11_pointer_state.focus_window);
     if (hit == NULL)
@@ -432,6 +469,35 @@ void y11_input_key(int press, uint8_t keycode)
     else
         y11_keyboard_state.key_state[byte] &= (uint8_t)~bit;
     y11_input_update_modifiers(keycode, press);
+
+    {
+        const y11_grab_t *grab = y11_grab_keyboard_active();
+
+        if (grab != NULL) {
+            /* An active keyboard grab owns all keystrokes. */
+            if (press)
+                y11_grab_deliver(grab, Y11_EVT_KEY_PRESS, keycode,
+                                 Y11_MASK_KEY_PRESS);
+            else
+                y11_grab_deliver(grab, Y11_EVT_KEY_RELEASE, keycode,
+                                 Y11_MASK_KEY_RELEASE);
+            return;
+        }
+    }
+
+    if (press) {
+        /*
+         * A passive key grab (GrabKey) matching the keycode and modifier
+         * state activates implicitly and receives the press.
+         */
+        if (y11_grab_match_key(keycode,
+                               y11_keyboard_state.modifier_mask) != NULL) {
+            y11_grab_deliver(y11_grab_keyboard_active(),
+                             Y11_EVT_KEY_PRESS, keycode,
+                             Y11_MASK_KEY_PRESS);
+            return;
+        }
+    }
 
     if (y11_keyboard_state.focus_window == 0)
         return;                   /* focus None: discard */

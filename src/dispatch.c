@@ -686,6 +686,22 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_get_property(c, pkt, len, data_off);
     case Y11_REQ_SET_INPUT_FOCUS:
         return y11_input_req_set_input_focus(c, pkt, len, data_off);
+    case Y11_REQ_GRAB_POINTER:
+        return y11_grab_req_pointer(c, pkt, len, data_off);
+    case Y11_REQ_UNGRAB_POINTER:
+        return y11_grab_req_ungrab_pointer(c, pkt, len, data_off);
+    case Y11_REQ_GRAB_BUTTON:
+        return y11_grab_req_button(c, pkt, len, data_off);
+    case Y11_REQ_UNGRAB_BUTTON:
+        return y11_grab_req_ungrab_button(c, pkt, len, data_off);
+    case Y11_REQ_GRAB_KEYBOARD:
+        return y11_grab_req_keyboard(c, pkt, len, data_off);
+    case Y11_REQ_UNGRAB_KEYBOARD:
+        return y11_grab_req_ungrab_keyboard(c, pkt, len, data_off);
+    case Y11_REQ_GRAB_KEY:
+        return y11_grab_req_key(c, pkt, len, data_off);
+    case Y11_REQ_UNGRAB_KEY:
+        return y11_grab_req_ungrab_key(c, pkt, len, data_off);
     case Y11_REQ_GET_INPUT_FOCUS:
         return y11_dispatch_get_input_focus(c);
     case Y11_REQ_GET_KEYBOARD_MAPPING:
@@ -717,6 +733,7 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_STORE_NAMED_COLOR:
     case Y11_REQ_CHANGE_PROPERTY:
     case Y11_REQ_DELETE_PROPERTY:
+    case Y11_REQ_ALLOW_EVENTS:
     case Y11_REQ_COPY_PLANE:
     case Y11_REQ_POLY_POINT:
     case Y11_REQ_POLY_LINE:
