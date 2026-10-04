@@ -591,6 +591,79 @@ int y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
     return 0;                   /* no reply */
 }
 
+/* Client-supplied keycode -> keysym overrides (ChangeKeyboardMapping). */
+#define Y11_KEYSYM_OVERRIDE_MAX 248   /* keycodes 8 .. 255 */
+
+static uint32_t y11_keysym_override[Y11_KEYSYM_OVERRIDE_MAX][Y11_KEYSYM_PER_KEYCODE];
+static uint8_t y11_keysym_override_set[Y11_KEYSYM_OVERRIDE_MAX];
+
+/* Get the keysyms for one keycode, honoring client overrides. */
+static void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2])
+{
+    size_t entry;
+
+    out[0] = 0;
+    out[1] = 0;
+    if (keycode - 8 < Y11_KEYSYM_OVERRIDE_MAX &&
+        y11_keysym_override_set[keycode - 8]) {
+        out[0] = y11_keysym_override[keycode - 8][0];
+        out[1] = y11_keysym_override[keycode - 8][1];
+        return;
+    }
+    for (entry = 0;
+         entry < sizeof(y11_keysym_table) / sizeof(y11_keysym_table[0]);
+         entry++) {
+        if (y11_keysym_table[entry].keycode == keycode) {
+            out[0] = y11_keysym_table[entry].keysyms[0];
+            out[1] = y11_keysym_table[entry].keysyms[1];
+            return;
+        }
+    }
+}
+
+/*
+ * ChangeKeyboardMapping (opcode 100): keyCodes@byte 1, first-keycode
+ * and keysyms-per-keycode in the first two data bytes, then the keysym
+ * list.  Stores a client-supplied keycode -> keysym overlay used by
+ * GetKeyboardMapping, exactly what xdotool's runtime key binding
+ * exercises.
+ */
+int y11_input_req_change_keyboard_mapping(struct y11_client *c,
+                                          const uint8_t *pkt, size_t len,
+                                          size_t data_off)
+{
+    uint8_t count = pkt[1];
+    uint8_t first = pkt[data_off];
+    uint8_t per_kc = pkt[data_off + 1];
+    const uint8_t *data = pkt + data_off + 4;
+    int i, j;
+
+    if (len - data_off != 4u + (size_t)count * per_kc * 4u) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+        return 0;
+    }
+    if (per_kc == 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
+        return 0;
+    }
+
+    for (i = 0; i < count; i++) {
+        uint8_t keycode = (uint8_t)(first + i);
+
+        if (keycode < 8)
+            continue;
+        y11_keysym_override_set[keycode - 8] = 1;
+        for (j = 0; j < Y11_KEYSYM_PER_KEYCODE; j++) {
+            uint32_t ks = j < per_kc
+                              ? y11_wire_get32(data +
+                                    ((size_t)i * per_kc + (size_t)j) * 4u)
+                              : 0;
+            y11_keysym_override[keycode - 8][j] = ks;
+        }
+    }
+    return 0;                   /* no reply */
+}
+
 /* ---- keyboard mapping ------------------------------------------------------------------- */
 
 /*
@@ -602,14 +675,18 @@ int y11_input_req_get_keyboard_mapping(struct y11_client *c,
                                        size_t data_off)
 {
     y11_get_keyboard_mapping_reply rep;
-    uint8_t first = pkt[1];
-    uint8_t count = pkt[data_off];
+    uint8_t first = pkt[data_off];
+    uint8_t count = pkt[data_off + 1];
     uint8_t *data;
     int i, j;
 
     (void)len;
     if (count == 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
+        return 0;
+    }
+    if (first < 8) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, first, pkt[0]);
         return 0;
     }
 
@@ -620,21 +697,14 @@ int y11_input_req_get_keyboard_mapping(struct y11_client *c,
     }
     for (i = 0; i < count; i++) {
         uint8_t keycode = (uint8_t)(first + i);
-        size_t entry;
+        uint32_t ks[2];
 
-        for (entry = 0;
-             entry < sizeof(y11_keysym_table) / sizeof(y11_keysym_table[0]);
-             entry++) {
-            if (y11_keysym_table[entry].keycode == keycode) {
-                for (j = 0; j < Y11_KEYSYM_PER_KEYCODE; j++) {
-                    y11_wire_put32(data +
-                                       ((size_t)i * Y11_KEYSYM_PER_KEYCODE +
-                                        (size_t)j) * 4u,
-                                   y11_keysym_table[entry].keysyms[j]);
-                }
-                break;
-            }
-        }
+        y11_input_keysyms_for(keycode, ks);
+        for (j = 0; j < Y11_KEYSYM_PER_KEYCODE; j++)
+            y11_wire_put32(data +
+                               ((size_t)i * Y11_KEYSYM_PER_KEYCODE +
+                                (size_t)j) * 4u,
+                           ks[j]);
     }
 
     memset(&rep, 0, sizeof(rep));
