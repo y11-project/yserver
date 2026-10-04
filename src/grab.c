@@ -176,9 +176,10 @@ void y11_grab_button_release_check(void)
 }
 
 /*
- * Deliver a device event through an active grab: the event goes to the
- * grab window's client when it either selected the mask bit on the
- * grab window or the grab itself selected it.
+ * Deliver a device event through an active grab: with owner-events off
+ * (the simple case) the grabbing client receives events selected in
+ * the grab's event mask, as if it had selected them on the grab
+ * window; otherwise the grab window's own subscribers get a look.
  */
 void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
                       uint32_t mask_bit)
@@ -213,10 +214,37 @@ void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
                    ptr->button_mask | y11_input_keyboard()->modifier_mask);
     ev.same_screen = 1;
 
+    /* The grab's event mask routes events straight to the grabber.
+     * With owner-events set, events first try the window under the
+     * pointer when it belongs to the grabbing client. */
+    if (grab->owner_events) {
+        struct y11_window *hit =
+            y11_window_at_point(ptr->root_x, ptr->root_y);
+
+        if (hit != NULL && hit->owner == grab->client) {
+            for (sub = hit->event_subs; sub != NULL; sub = sub->next) {
+                if ((sub->mask & mask_bit) != 0) {
+                    y11_wire_put32(&ev.event, hit->id);
+                    y11_wire_put16(&ev.event_x,
+                                   (int16_t)(ptr->root_x - hit->abs_x -
+                                             (int32_t)hit->border_width));
+                    y11_wire_put16(&ev.event_y,
+                                   (int16_t)(ptr->root_y - hit->abs_y -
+                                             (int32_t)hit->border_width));
+                    y11_event_dispatch32(sub->client, &ev, sizeof(ev));
+                    return;
+                }
+            }
+        }
+    }
+    if ((grab->event_mask & mask_bit) != 0) {
+        y11_event_dispatch32(grab->client, &ev, sizeof(ev));
+        return;
+    }
+
+    /* Otherwise the grab window's subscribers matching the bit. */
     for (sub = win->event_subs; sub != NULL; sub = sub->next) {
-        if (sub->client != grab->client)
-            continue;
-        if ((sub->mask & mask_bit) == 0 && (grab->event_mask & mask_bit) == 0)
+        if ((sub->mask & mask_bit) == 0)
             continue;
         y11_event_dispatch32(sub->client, &ev, sizeof(ev));
         return;
@@ -290,7 +318,7 @@ int y11_grab_req_pointer(struct y11_client *c, const uint8_t *pkt,
         status = Y11_GRAB_NOT_VIEWABLE;
         goto reply;
     }
-    if (y11_pointer_grab.active) {
+    if (y11_pointer_grab.active && y11_pointer_grab.client != c) {
         status = Y11_GRAB_ALREADY;
         goto reply;
     }
@@ -357,14 +385,14 @@ static int y11_grab_register_passive(struct y11_client *c,
     }
     if (is_key) {
         modifiers = y11_wire_get16(body + 4);
-        key = pkt[1];
-        if (body[3] > 1 || body[4] > 1) {       /* modes */
+        key = body[6];
+        if (body[7] > 1 || body[8] > 1) {       /* modes */
             y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
             return 0;
         }
     } else {
         modifiers = y11_wire_get16(body + 18);
-        button = pkt[1];
+        button = body[16];
         if (button > 5) {
             y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, button, pkt[0]);
             return 0;
@@ -394,13 +422,13 @@ static int y11_grab_register_passive(struct y11_client *c,
     p->owner_events = pkt[1] != 0;
     p->is_key = is_key != 0;
     if (is_key) {
-        p->pointer_mode = body[3];
-        p->keyboard_mode = body[4];
+        p->pointer_mode = body[7];
+        p->keyboard_mode = body[8];
     } else {
         p->event_mask = y11_wire_get16(body + 4);
         p->confine_to = y11_wire_get32(body + 8);
-        p->pointer_mode = body[2];
-        p->keyboard_mode = body[3];
+        p->pointer_mode = body[6];
+        p->keyboard_mode = body[7];
     }
     p->next = y11_passive_grabs;
     y11_passive_grabs = p;
