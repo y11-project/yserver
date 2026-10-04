@@ -327,6 +327,122 @@ typedef struct {
     uint32_t pad1[5];
 } y11_query_colors_reply;       /* 32 bytes + one 8-byte RGB item per color */
 
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t time;              /* bytes 4-7 */
+    uint32_t root;              /* bytes 8-11 */
+    uint32_t event;             /* bytes 12-15 */
+    uint32_t child;             /* bytes 16-19 */
+    int16_t  root_x;            /* bytes 20-21 */
+    int16_t  root_y;            /* bytes 22-23 */
+    int16_t  event_x;           /* bytes 24-25 */
+    int16_t  event_y;           /* bytes 26-27 */
+    uint16_t state;             /* bytes 28-29: modifier + button mask */
+    uint8_t  same_screen;       /* byte 30 */
+    uint8_t  pad0;              /* byte 31 */
+} y11_key_button_event;         /* 32: KeyPress/Release, Button*, Motion */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t time;              /* bytes 4-7 */
+    uint32_t root;              /* bytes 8-11 */
+    uint32_t event;             /* bytes 12-15 */
+    uint32_t child;             /* bytes 16-19 */
+    int16_t  root_x;            /* bytes 20-21 */
+    int16_t root_y;            /* bytes 22-23 */
+    int16_t  event_x;           /* bytes 24-25 */
+    int16_t  event_y;           /* bytes 26-27 */
+    uint16_t state;             /* bytes 28-29 */
+    uint8_t  mode;              /* byte 30: notify mode */
+    uint8_t  flags;             /* byte 31: focus (1) | same-screen (2) */
+} y11_crossing_event;           /* 32: EnterNotify, LeaveNotify */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
+    uint32_t window;            /* bytes 4-7 */
+    uint8_t  mode;              /* byte 8: notify mode */
+    uint8_t  pad0[3];
+    uint32_t pad1[5];
+} y11_focus_event;              /* 32: FocusIn, FocusOut */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = status */
+    uint32_t pad0[6];
+} y11_grab_reply;               /* 32: GrabPointer, GrabKeyboard */
+
+typedef struct {
+    uint8_t  opcode;            /* 26 = GrabPointer */
+    uint8_t  owner_events;
+    uint16_t length;
+    uint32_t grab_window;
+    uint16_t event_mask;
+    uint8_t  pointer_mode;
+    uint8_t  keyboard_mode;
+    uint32_t confine_to;
+    uint32_t cursor;
+    uint32_t time;
+} y11_grab_pointer_req;         /* 24 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 28 = GrabButton */
+    uint8_t  owner_events;
+    uint16_t length;
+    uint32_t grab_window;
+    uint16_t event_mask;
+    uint8_t  pointer_mode;
+    uint8_t  keyboard_mode;
+    uint32_t confine_to;
+    uint32_t cursor;
+    uint8_t  button;
+    uint8_t  pad0;
+    uint16_t modifiers;
+} y11_grab_button_req;          /* 24 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 31 = GrabKeyboard */
+    uint8_t  owner_events;
+    uint16_t length;
+    uint32_t grab_window;
+    uint32_t time;
+    uint8_t  pointer_mode;
+    uint8_t  keyboard_mode;
+    uint16_t pad0;
+} y11_grab_keyboard_req;        /* 16 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 33 = GrabKey */
+    uint8_t  owner_events;
+    uint16_t length;
+    uint32_t grab_window;
+    uint16_t modifiers;
+    uint8_t  key;
+    uint8_t  pointer_mode;
+    uint8_t  keyboard_mode;
+    uint8_t  pad0[3];
+} y11_grab_key_req;             /* 16 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 42 = SetInputFocus */
+    uint8_t  revert_to;
+    uint16_t length;
+    uint32_t focus;
+    uint32_t time;
+} y11_set_input_focus_req;      /* 12 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 25 = SendEvent */
+    uint8_t  propagate;
+    uint16_t length;
+    uint32_t destination;
+    uint32_t event_mask;
+    /* 32-byte event follows */
+} y11_send_event_req;           /* 12 bytes + 32-byte event */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = keysyms per keycode */
+    uint32_t pad0[6];
+} y11_get_keyboard_mapping_reply; /* 32 + keysym list */
+
 /* ---- rendering requests ------------------------------------------------- */
 
 typedef struct {
@@ -647,5 +763,16 @@ typedef char y11_wire_chk_put_image_req[(sizeof(y11_put_image_req) == 24) ? 1 : 
 typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : -1];
 typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_clear_area_req[(sizeof(y11_clear_area_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_key_button_event[(sizeof(y11_key_button_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_crossing_event[(sizeof(y11_crossing_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_focus_event[(sizeof(y11_focus_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_grab_reply[(sizeof(y11_grab_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_grab_pointer_req[(sizeof(y11_grab_pointer_req) == 24) ? 1 : -1];
+typedef char y11_wire_chk_grab_button_req[(sizeof(y11_grab_button_req) == 24) ? 1 : -1];
+typedef char y11_wire_chk_grab_keyboard_req[(sizeof(y11_grab_keyboard_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_grab_key_req[(sizeof(y11_grab_key_req) == 16) ? 1 : -1];
+typedef char y11_wire_chk_set_input_focus_req[(sizeof(y11_set_input_focus_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_send_event_req[(sizeof(y11_send_event_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_get_keyboard_mapping_reply[(sizeof(y11_get_keyboard_mapping_reply) == 32) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */

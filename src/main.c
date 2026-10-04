@@ -332,12 +332,21 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    if (y11_input_init() != 0) {
+        fprintf(stderr, "y11: cannot initialize the input subsystem\n");
+        y11_server_shutdown(&srv);
+        y11_window_shutdown();
+        y11_atom_shutdown();
+        return EXIT_FAILURE;
+    }
+
     fprintf(stderr, "y11: listening on %s (%s -> %s)\n",
             srv.socket_path, srv.link_path, srv.socket_path);
 
     y11_server_run(&srv);
 
     y11_server_shutdown(&srv);
+    y11_input_shutdown();
     y11_window_shutdown();
     y11_atom_shutdown();
     y11_resource_shutdown();

@@ -84,6 +84,47 @@ static void y11_event_deliver(struct y11_window *win, uint32_t mask_bit,
     }
 }
 
+/* ---- hit-testing -------------------------------------------------------------- */
+
+/*
+ * Return the deepest viewable InputOutput window under the root-relative
+ * point, or NULL when there is no root.  Stacking runs bottom-to-top
+ * from first_child to last_child, so scan each child list topmost
+ * (last_child) first.  A window contains the point when it falls inside
+ * the window including its border.
+ */
+struct y11_window *y11_window_at_point(int32_t x, int32_t y)
+{
+    struct y11_window *win = y11_window_get(Y11_SCREEN_ROOT);
+
+    if (win == NULL)
+        return NULL;
+
+    for (;;) {
+        struct y11_window *child, *found = NULL;
+
+        for (child = win->last_child; child != NULL;
+             child = child->prev_sibling) {
+            if (child->window_class == Y11_WINDOW_CLASS_INPUT_ONLY)
+                continue;       /* transparent to the pointer */
+            if (child->map_state != Y11_MAP_STATE_VIEWABLE)
+                continue;
+            if (x >= child->abs_x &&
+                x < child->abs_x + (int32_t)child->border_width * 2 +
+                    (int32_t)child->width &&
+                y >= child->abs_y &&
+                y < child->abs_y + (int32_t)child->border_width * 2 +
+                    (int32_t)child->height) {
+                found = child;
+                break;
+            }
+        }
+        if (found == NULL)
+            return win;
+        win = found;
+    }
+}
+
 /* ---- notification crafting ------------------------------------------------------ */
 
 /* CreateNotify (16): broadcast to the parent's SubstructureNotify listeners. */

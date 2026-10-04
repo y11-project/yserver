@@ -52,6 +52,15 @@ typedef uint32_t yid_t;
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
 enum y11_event_type {
+    Y11_EVT_KEY_PRESS             = 2,
+    Y11_EVT_KEY_RELEASE           = 3,
+    Y11_EVT_BUTTON_PRESS          = 4,
+    Y11_EVT_BUTTON_RELEASE        = 5,
+    Y11_EVT_MOTION_NOTIFY         = 6,
+    Y11_EVT_ENTER_NOTIFY          = 7,
+    Y11_EVT_LEAVE_NOTIFY          = 8,
+    Y11_EVT_FOCUS_IN              = 9,
+    Y11_EVT_FOCUS_OUT             = 10,
     Y11_EVT_EXPOSE              = 12,
     Y11_EVT_CREATE_NOTIFY      = 16,
     Y11_EVT_DESTROY_NOTIFY     = 17,
@@ -236,6 +245,17 @@ enum y11_req_opcode {
     Y11_REQ_GET_PROPERTY             = 20,
     Y11_REQ_LIST_PROPERTIES          = 21,
     Y11_REQ_SET_SELECTION_OWNER      = 22,
+    Y11_REQ_SEND_EVENT               = 25,
+    Y11_REQ_GRAB_POINTER             = 26,
+    Y11_REQ_UNGRAB_POINTER           = 27,
+    Y11_REQ_GRAB_BUTTON              = 28,
+    Y11_REQ_UNGRAB_BUTTON            = 29,
+    Y11_REQ_GRAB_KEYBOARD            = 31,
+    Y11_REQ_UNGRAB_KEYBOARD          = 32,
+    Y11_REQ_GRAB_KEY                 = 33,
+    Y11_REQ_UNGRAB_KEY               = 34,
+    Y11_REQ_ALLOW_EVENTS             = 35,
+    Y11_REQ_SET_INPUT_FOCUS          = 42,
     Y11_REQ_GET_INPUT_FOCUS          = 43,
     Y11_REQ_QUERY_POINTER           = 38,
     Y11_REQ_TRANSLATE_COORDS       = 40,
@@ -261,6 +281,7 @@ enum y11_req_opcode {
     Y11_REQ_QUERY_COLORS             = 91,
     Y11_REQ_LOOKUP_COLOR             = 92,
     Y11_REQ_GET_KEYBOARD_CONTROL     = 103,
+    Y11_REQ_GET_KEYBOARD_MAPPING     = 101,
     Y11_REQ_GET_POINTER_CONTROL      = 106,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
     Y11_REQ_NO_OPERATION             = 127
@@ -359,6 +380,28 @@ struct y11_event_sub {
 };
 
 /* ---- windows ------------------------------------------------------------ */
+
+/*
+ * Pointer state: root coordinates, pressed buttons, and the window
+ * directly under the cursor.
+ */
+typedef struct y11_pointer {
+    int16_t  root_x;
+    int16_t  root_y;
+    uint16_t button_mask;        /* Button1Mask .. Button5Mask */
+    yid_t    focus_window;       /* window directly under cursor */
+} y11_pointer_t;
+
+/*
+ * Keyboard state: pressed-key bitfield, modifier mask, and the input
+ * focus (None 0, PointerRoot 1, or a window).
+ */
+typedef struct y11_keyboard {
+    uint8_t  key_state[32];      /* 256-bit bitfield of pressed keys */
+    uint16_t modifier_mask;      /* Shift, Lock, Control, Mod1-Mod5 */
+    yid_t    focus_window;
+    uint8_t  revert_to;          /* RevertToNone/PointerRoot/Parent */
+} y11_keyboard_t;
 
 struct y11_window {
     yid_t               id;
@@ -549,6 +592,27 @@ void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
 /* ---- misc ------------------------------------------------------------------------ */
 
 unsigned y11_popcount32(uint32_t v);
+
+/* ---- src/input.c ----------------------------------------------------------------- */
+
+int  y11_input_init(void);
+void y11_input_shutdown(void);
+void y11_input_purge_client(struct y11_client *c);
+void y11_input_motion(int16_t dx, int16_t dy);
+void y11_input_motion_abs(int16_t x, int16_t y);
+void y11_input_button(int press, uint8_t button);
+void y11_input_key(int press, uint8_t keycode);
+const y11_pointer_t *y11_input_pointer(void);
+const y11_keyboard_t *y11_input_keyboard(void);
+int  y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
+                                    size_t len, size_t data_off);
+int  y11_input_req_get_keyboard_mapping(struct y11_client *c,
+                                       const uint8_t *pkt, size_t len,
+                                       size_t data_off);
+
+/* ---- src/events.c (hit-testing) --------------------------------------------------- */
+
+struct y11_window *y11_window_at_point(int32_t x, int32_t y);
 
 /* ---- src/atom.c --------------------------------------------------------- */
 

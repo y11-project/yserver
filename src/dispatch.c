@@ -78,15 +78,17 @@ static int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
 }
 
 /*
- * QueryPointer (38): a headless server has no pointer, so the reply
- * parks it at the center of the screen with no buttons pressed.
- * Clients that poll the pointer (xeyes and friends) stay happy.
+ * QueryPointer (38): reply with the live pointer position, pressed
+ * buttons, modifiers, and the child of the queried window under the
+ * cursor.
  */
 static int y11_dispatch_query_pointer(struct y11_client *c, const uint8_t *pkt,
                                       size_t len, size_t data_off)
 {
     y11_query_pointer_reply rep;
-    struct y11_window *win;
+    const y11_pointer_t *ptr = y11_input_pointer();
+    const y11_keyboard_t *kbd = y11_input_keyboard();
+    struct y11_window *win, *hit;
 
     if (len - data_off != 4u)
         return y11_dispatch_bad_length(c, pkt[0]);
@@ -101,14 +103,28 @@ static int y11_dispatch_query_pointer(struct y11_client *c, const uint8_t *pkt,
     rep.hdr.type = 1;           /* X_Reply */
     rep.hdr.pad0 = 1;           /* same-screen */
     y11_wire_put32(&rep.root, Y11_SCREEN_ROOT);
-    y11_wire_put32(&rep.child, 0);     /* None */
-    y11_wire_put16(&rep.root_x, (uint16_t)(Y11_SCREEN_WIDTH / 2));
-    y11_wire_put16(&rep.root_y, (uint16_t)(Y11_SCREEN_HEIGHT / 2));
+
+    hit = y11_window_at_point(ptr->root_x, ptr->root_y);
+    if (hit != NULL && hit != win) {
+        struct y11_window *w;
+
+        for (w = hit; w != NULL; w = w->parent) {
+            if (w->parent == win) {
+                y11_wire_put32(&rep.child, w->id);
+                break;
+            }
+        }
+    }
+
+    y11_wire_put16(&rep.root_x, (uint16_t)ptr->root_x);
+    y11_wire_put16(&rep.root_y, (uint16_t)ptr->root_y);
     y11_wire_put16(&rep.win_x,
-                   (int16_t)(Y11_SCREEN_WIDTH / 2 - win->abs_x));
+                   (int16_t)(ptr->root_x - win->abs_x -
+                             (int32_t)win->border_width));
     y11_wire_put16(&rep.win_y,
-                   (int16_t)(Y11_SCREEN_HEIGHT / 2 - win->abs_y));
-    /* state (button mask) stays zero. */
+                   (int16_t)(ptr->root_y - win->abs_y -
+                             (int32_t)win->border_width));
+    y11_wire_put16(&rep.state, ptr->button_mask | kbd->modifier_mask);
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
@@ -260,11 +276,12 @@ static int y11_dispatch_get_property(struct y11_client *c,
 static int y11_dispatch_get_input_focus(struct y11_client *c)
 {
     y11_get_input_focus_reply rep;
+    const y11_keyboard_t *kbd = y11_input_keyboard();
 
     memset(&rep, 0, sizeof(rep));
     rep.hdr.type = 1;           /* X_Reply */
-    rep.hdr.pad0 = 0;           /* revert-to: RevertToNone */
-    y11_wire_put32(&rep.focus, 1u);     /* PointerRoot */
+    rep.hdr.pad0 = kbd->revert_to;
+    y11_wire_put32(&rep.focus, kbd->focus_window);
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
@@ -667,8 +684,12 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_list_properties(c, pkt, len, data_off);
     case Y11_REQ_GET_PROPERTY:
         return y11_dispatch_get_property(c, pkt, len, data_off);
+    case Y11_REQ_SET_INPUT_FOCUS:
+        return y11_input_req_set_input_focus(c, pkt, len, data_off);
     case Y11_REQ_GET_INPUT_FOCUS:
         return y11_dispatch_get_input_focus(c);
+    case Y11_REQ_GET_KEYBOARD_MAPPING:
+        return y11_input_req_get_keyboard_mapping(c, pkt, len, data_off);
     case Y11_REQ_QUERY_POINTER:
         return y11_dispatch_query_pointer(c, pkt, len, data_off);
     case Y11_REQ_TRANSLATE_COORDS:
