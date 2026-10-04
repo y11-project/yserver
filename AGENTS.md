@@ -7,8 +7,9 @@ Guidance for AI coding agents working in this repository.
 `y11` (repo: `yserver`) is an X11-compatible display server daemon for
 The Y11 Project, written in strict ISO C99 for portable POSIX (Linux
 glibc/musl and FreeBSD). It implements the wire protocol engine,
-connection handshake, the window tree hierarchy and WM substructure
-redirection, with no rendering yet.
+connection handshake, the window tree hierarchy, WM substructure
+redirection, and core 2D rasterization (drawables, graphics contexts,
+solid fills, blits and image transfer).
 
 ## Build
 
@@ -50,9 +51,10 @@ redirection, with no rendering yet.
 - A foreign X server holds the abstract `:0` socket, which libX11/XCB
   prefers, so run the daemon on a free display (`./y11 5`) and test
   with `DISPLAY=:5`.
-- Client harnesses built from source live in `/tmp/opencode`: `xwininfo`
-  (needs its libxcb-shape stub), `xset`, `ytest` (raw-socket protocol
-  suite) and `ywm` (minimal test window manager). `xeyes` is installed
-  system-wide and is the real-client smoke test.
+- Client harnesses are built from source into `/tmp/opencode` (the
+  approved temp area gets wiped occasionally; rebuild as needed):
+  `xwininfo` (needs its libxcb-shape stub), `xsetroot`, and `yimg`
+  (image round-trip suite). `xeyes` is installed system-wide and is
+  the real-client smoke test.
 - `xmessage` cannot be built here (no Xaw headers); use `xeyes` plus the
   raw-socket harnesses instead.
