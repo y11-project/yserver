@@ -439,6 +439,11 @@ typedef struct {
 } y11_send_event_req;           /* 12 bytes + 32-byte event */
 
 typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = nExtensions (byte 1) */
+    uint32_t pad0[6];
+} y11_list_extensions_reply;    /* 32 bytes + counted names */
+
+typedef struct {
     y11_reply_hdr hdr;          /* hdr.pad0 = keysyms per keycode */
     uint32_t pad0[6];
 } y11_get_keyboard_mapping_reply; /* 32 + keysym list */
@@ -879,6 +884,7 @@ typedef char y11_wire_chk_shm_get_image_req[(sizeof(y11_shm_get_image_req) == 32
 typedef char y11_wire_chk_shm_get_image_reply[(sizeof(y11_shm_get_image_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_shm_create_pixmap_req[(sizeof(y11_shm_create_pixmap_req) == 28) ? 1 : -1];
 typedef char y11_wire_chk_shm_completion_event[(sizeof(y11_shm_completion_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_list_extensions_reply[(sizeof(y11_list_extensions_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_clear_area_req[(sizeof(y11_clear_area_req) == 16) ? 1 : -1];
 typedef char y11_wire_chk_key_button_event[(sizeof(y11_key_button_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_crossing_event[(sizeof(y11_crossing_event) == 32) ? 1 : -1];

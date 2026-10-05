@@ -279,6 +279,7 @@ enum y11_req_opcode {
     Y11_REQ_SET_INPUT_FOCUS          = 42,
     Y11_REQ_GET_INPUT_FOCUS          = 43,
     Y11_REQ_QUERY_POINTER           = 38,
+    Y11_REQ_WARP_POINTER            = 41,
     Y11_REQ_TRANSLATE_COORDS       = 40,
     Y11_REQ_GET_FONT_PATH            = 52,
     Y11_REQ_CREATE_PIXMAP            = 53,
@@ -294,6 +295,8 @@ enum y11_req_opcode {
     Y11_REQ_PUT_IMAGE                = 72,
     Y11_REQ_GET_IMAGE                = 73,
     Y11_REQ_QUERY_EXTENSION          = 98,
+    Y11_REQ_QUERY_BEST_SIZE          = 97,
+    Y11_REQ_LIST_EXTENSIONS          = 99,
     Y11_REQ_ALLOC_COLOR              = 84,
     Y11_REQ_ALLOC_NAMED_COLOR        = 85,
     Y11_REQ_FREE_COLORS              = 88,
@@ -306,7 +309,9 @@ enum y11_req_opcode {
     Y11_REQ_GET_MODIFIER_MAPPING     = 119,
     Y11_REQ_GET_KEYBOARD_MAPPING     = 101,
     Y11_REQ_GET_POINTER_CONTROL      = 106,
+    Y11_REQ_SET_SCREEN_SAVER         = 107,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
+    Y11_REQ_FORCE_SCREEN_SAVER       = 115,
     Y11_REQ_NO_OPERATION             = 127
 };
 

@@ -264,6 +264,70 @@ static int y11_dispatch_get_modifier_mapping(struct y11_client *c,
     return 0;
 }
 
+/*
+ * QueryBestSize (opcode 97): the largest cursor is 64x64; tile and
+ * stipple sizes are echoed back (the headless screen has no hardware
+ * limits).
+ */
+static int y11_dispatch_query_best_size(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off)
+{
+    y11_get_geometry_reply rep;     /* same 32-byte shape: w/h at 8-11 */
+
+    if (len - data_off != 8u)  /* drawable, width, height */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    if (pkt[1] == 0) {          /* Cursor */
+        y11_wire_put16(&rep.x, 64);
+        y11_wire_put16(&rep.y, 64);
+    } else {                    /* Tile / Stipple: echo */
+        y11_wire_put16(&rep.x, y11_wire_get16(pkt + data_off + 4));
+        y11_wire_put16(&rep.y, y11_wire_get16(pkt + data_off + 6));
+    }
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * ListExtensions (opcode 99): reply with every extension name as a
+ * counted string, the whole list padded to a 4-byte boundary.
+ */
+static int y11_dispatch_list_extensions(struct y11_client *c)
+{
+    static const char *const names[] = {
+        Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME
+    };
+    y11_list_extensions_reply rep;
+    uint8_t data[64];
+    size_t off = 0;
+    size_t total;
+    unsigned i;
+
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        size_t n = strlen(names[i]);
+
+        data[off++] = (uint8_t)n;
+        memcpy(data + off, names[i], n);
+        off += n;
+    }
+    while (off % 4u != 0)
+        data[off++] = 0;        /* pad the list to a 4-byte boundary */
+    total = off;
+
+    memset(&rep, 0, sizeof(rep));
+    rep.hdr.type = 1;           /* X_Reply */
+    rep.hdr.pad0 = (uint8_t)(sizeof(names) / sizeof(names[0]));
+    y11_wire_put32(&rep.hdr.length, total / 4u);
+
+    y11_dispatch_send_reply(c, &rep, sizeof(rep));
+    y11_client_send(c, data, total);
+    return 0;
+}
+
 /* ---- individual request handlers ------------------------------------------- */
 
 /*
@@ -853,6 +917,10 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_atom_req_get_name(c, pkt, len, data_off);
     case Y11_REQ_QUERY_EXTENSION:
         return y11_dispatch_query_extension(c, pkt, len, data_off);
+    case Y11_REQ_LIST_EXTENSIONS:
+        return y11_dispatch_list_extensions(c);
+    case Y11_REQ_QUERY_BEST_SIZE:
+        return y11_dispatch_query_best_size(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_COLOR:
         return y11_dispatch_alloc_color(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_NAMED_COLOR:
@@ -895,6 +963,8 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_query_pointer(c, pkt, len, data_off);
     case Y11_REQ_TRANSLATE_COORDS:
         return y11_dispatch_translate_coords(c, pkt, len, data_off);
+    case Y11_REQ_WARP_POINTER:
+        return y11_dispatch_accept_resource(c, pkt, len, data_off);
     case Y11_REQ_GET_FONT_PATH:
         return y11_dispatch_get_font_path(c);
     case Y11_REQ_GET_KEYBOARD_CONTROL:
@@ -903,6 +973,8 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_get_pointer_control(c);
     case Y11_REQ_GET_SCREEN_SAVER:
         return y11_dispatch_get_screen_saver(c);
+    case Y11_REQ_SET_SCREEN_SAVER:
+        return y11_dispatch_accept_resource(c, pkt, len, data_off);
     case Y11_REQ_CREATE_GC:
         return y11_gc_req_create(c, pkt, len, data_off);
     case Y11_REQ_CHANGE_GC:
@@ -919,6 +991,7 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_CHANGE_PROPERTY:
     case Y11_REQ_DELETE_PROPERTY:
     case Y11_REQ_ALLOW_EVENTS:
+    case Y11_REQ_FORCE_SCREEN_SAVER:
     case Y11_REQ_COPY_PLANE:
     case Y11_REQ_POLY_POINT:
     case Y11_REQ_POLY_LINE:

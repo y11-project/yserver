@@ -255,10 +255,8 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, drawable_id, pkt[0]);
         return 0;
     }
-    if (seg->read_only) {
-        y11_dispatch_send_error(c, Y11_ERR_BAD_ACCESS, shmseg_id, pkt[0]);
-        return 0;
-    }
+    /* A read-only mapping is fine here: the server only reads the
+     * client's pixels. */
 
     /* Bounds check: the last blitted byte must be inside the segment. */
     stride = (uint64_t)total_width * 4u;
@@ -407,6 +405,11 @@ static int y11_shm_get_image(struct y11_client *c, const uint8_t *pkt,
     }
     if (width == 0 || height == 0 || format != 2) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, format, pkt[0]);
+        return 0;
+    }
+    /* The server writes pixels into the segment: needs write access. */
+    if (seg->read_only) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ACCESS, shmseg_id, pkt[0]);
         return 0;
     }
 
