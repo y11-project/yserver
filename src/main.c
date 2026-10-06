@@ -399,6 +399,12 @@ int main(int argc, char **argv)
     }
 
     /*
+     * DRI3 render-node access: prefer the session card fd, fall back
+     * to opening a render node directly (unprivileged).
+     */
+    (void)y11_dri3_init(srv.drm_fd);
+
+    /*
      * Hardware scanout comes up after the root window exists: it needs
      * the root backbuffer as the composition source and DRM master
      * from the seat.  Failing here just means the software screen.
@@ -423,6 +429,7 @@ int main(int argc, char **argv)
     y11_scanout_shutdown();
     y11_drm_shutdown();
     y11_session_shutdown(&y11_g_session);
+    y11_dri3_shutdown();
 
     y11_server_shutdown(&srv);
     y11_input_shutdown();

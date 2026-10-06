@@ -42,6 +42,22 @@ void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len)
 }
 
 /*
+ * Send a reply that carries one ancillary file descriptor (DRI3Open,
+ * DRI3BufferFromPixmap): sequence-stamped, fd attached at flush time.
+ */
+void y11_dispatch_send_reply_fd(struct y11_client *c, void *rep, size_t len,
+                                int fd)
+{
+    uint8_t *b = (uint8_t *)rep;
+
+    b[2] = (uint8_t)(c->sequence_number & 0xFFu);
+    b[3] = (uint8_t)((c->sequence_number >> 8) & 0xFFu);
+
+    if (y11_client_send_fd(c, rep, len, fd) != 0)
+        c->dead = 1;
+}
+
+/*
  * Send a 32-byte error packet:
  *
  *   1   0 (error)
@@ -299,7 +315,7 @@ static int y11_dispatch_query_best_size(struct y11_client *c,
 static int y11_dispatch_list_extensions(struct y11_client *c)
 {
     static const char *const names[] = {
-        Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME
+        Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME, Y11_DRI3_NAME
     };
     y11_list_extensions_reply rep;
     uint8_t data[64];
@@ -370,6 +386,11 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         rep.major_opcode = (uint8_t)Y11_SHM_EXT_OPCODE;
         rep.first_event = (uint8_t)Y11_SHM_FIRST_EVENT;
         rep.first_error = (uint8_t)Y11_SHM_FIRST_ERROR;
+    }
+    if (name_len == (uint16_t)(sizeof(Y11_DRI3_NAME) - 1) &&
+        memcmp(name, Y11_DRI3_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_DRI3_EXT_OPCODE;
     }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
@@ -1028,6 +1049,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         /* MIT-SHM extension requests carry the sub-opcode in byte 1. */
         if (opcode == (uint8_t)Y11_SHM_EXT_OPCODE)
             return y11_shm_req(c, pkt, len, data_off);
+        /* DRI3 buffer passing (sub-opcode in byte 1). */
+        if (opcode == (uint8_t)Y11_DRI3_EXT_OPCODE)
+            return y11_dri3_req(c, pkt, len, data_off);
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
         return 0;
     }

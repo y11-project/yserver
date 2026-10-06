@@ -14,16 +14,21 @@
 #include "y11_wire.h"
 
 /* Free a pixmap object and its pixel buffer (table entry stays).
- * Shared-memory pixmaps point into the client's segment: the memory
- * is never freed here. */
+ * Shared-memory pixmaps point into the client's segment and DRI3
+ * pixmaps hold a GEM reference: neither is freed here, but the GEM
+ * handle is released. */
 void y11_pixmap_destroy(void *ptr)
 {
     struct y11_pixmap *p = ptr;
 
     if (p == NULL)
         return;
-    if (!p->is_shm)
+    if (p->is_dri3) {
+        y11_dri3_release_buffer(p->dri3);
+        free(p->dri3);
+    } else if (!p->is_shm) {
         free(p->base.pixels);
+    }
     free(p);
 }
 
