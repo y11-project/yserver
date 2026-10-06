@@ -62,6 +62,12 @@ solid fills, blits and image transfer).
 - libseat has no dev package installed: the API header is vendored at
   include/libseat.h and the runtime is linked by soname
   (`-l:libseat.so.1`).
+- The DRI3 device is selected by probing dumb-buffer support: this
+  laptop's i915 render node refuses `CREATE_DUMB` with EPERM, so y11
+  falls back to card1 (amdgpu). DRI3/Present are verified end-to-end
+  with the `ydri3` harness (fd receipt, DMA-BUF round trip, present
+  events, pixel verification). GL clients additionally need the GLX
+  extension, which is not implemented.
 - Client harnesses are built from source into `/tmp/opencode` (the
   approved temp area gets wiped occasionally; rebuild as needed):
   `xwininfo` (needs its libxcb-shape stub), `xsetroot`, and `yimg`
