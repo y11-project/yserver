@@ -403,6 +403,7 @@ int main(int argc, char **argv)
      * to opening a render node directly (unprivileged).
      */
     (void)y11_dri3_init(srv.drm_fd);
+    (void)y11_present_init();
 
     /*
      * Hardware scanout comes up after the root window exists: it needs
@@ -429,6 +430,7 @@ int main(int argc, char **argv)
     y11_scanout_shutdown();
     y11_drm_shutdown();
     y11_session_shutdown(&y11_g_session);
+    y11_present_shutdown();
     y11_dri3_shutdown();
 
     y11_server_shutdown(&srv);

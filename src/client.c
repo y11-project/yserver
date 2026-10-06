@@ -68,6 +68,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     y11_shm_purge_client(c);
     /* And its input grabs. */
     y11_grab_purge_client(c);
+    /* And its Present event selections. */
+    y11_present_purge_client(c);
     /* And any undelivered ancillary descriptors. */
     for (i = 0; i < c->in_fd_count; i++)
         close(c->in_fds[i]);

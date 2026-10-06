@@ -315,7 +315,8 @@ static int y11_dispatch_query_best_size(struct y11_client *c,
 static int y11_dispatch_list_extensions(struct y11_client *c)
 {
     static const char *const names[] = {
-        Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME, Y11_DRI3_NAME
+        Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME, Y11_DRI3_NAME,
+        Y11_PRESENT_NAME
     };
     y11_list_extensions_reply rep;
     uint8_t data[64];
@@ -391,6 +392,13 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         memcmp(name, Y11_DRI3_NAME, name_len) == 0) {
         rep.present = 1;
         rep.major_opcode = (uint8_t)Y11_DRI3_EXT_OPCODE;
+    }
+    if (name_len == (uint16_t)(sizeof(Y11_PRESENT_NAME) - 1) &&
+        memcmp(name, Y11_PRESENT_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_PRESENT_EXT_OPCODE;
+        rep.first_event = (uint8_t)Y11_PRESENT_FIRST_EVENT;
+        rep.first_error = (uint8_t)Y11_PRESENT_FIRST_ERROR;
     }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
@@ -1052,6 +1060,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         /* DRI3 buffer passing (sub-opcode in byte 1). */
         if (opcode == (uint8_t)Y11_DRI3_EXT_OPCODE)
             return y11_dri3_req(c, pkt, len, data_off);
+        /* Present flips and vsync notifications (byte 1). */
+        if (opcode == (uint8_t)Y11_PRESENT_EXT_OPCODE)
+            return y11_present_req(c, pkt, len, data_off);
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
         return 0;
     }
