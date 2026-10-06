@@ -576,6 +576,26 @@ typedef struct {
 } y11_shm_query_version_reply;  /* 32 bytes */
 
 typedef struct {
+    y11_reply_hdr hdr;
+    uint32_t major;             /* bytes 8-11 (CARD32 in DRI3/Present) */
+    uint32_t minor;             /* bytes 12-15 */
+    uint32_t pad0[4];
+} y11_version_reply;             /* 32: DRI3QueryVersion, PresentQueryVersion */
+
+typedef struct {
+    y11_reply_hdr hdr;          /* hdr.pad0 = nfd (1) */
+    uint32_t size;              /* bytes 8-11 */
+    uint16_t width;             /* bytes 12-13 */
+    uint16_t height;            /* bytes 14-15 */
+    uint16_t stride;            /* bytes 16-17 */
+    uint8_t  depth;             /* byte 18 */
+    uint8_t  bpp;               /* byte 19 */
+    uint32_t pad0;              /* bytes 20-23 */
+    uint32_t pad1;
+    uint32_t pad2;
+} y11_dri3_buffer_reply;         /* 32: DRI3BufferFromPixmap, fd attached */
+
+typedef struct {
     uint8_t  reqType;
     uint8_t  shmReqType;        /* 1 = ShmAttach */
     uint16_t length;
@@ -815,6 +835,18 @@ static inline void y11_wire_put32(void *p, uint32_t v)
     b[3] = (uint8_t)((v >> 24) & 0xFFu);
 }
 
+static inline void y11_wire_put64(void *p, uint64_t v)
+{
+    y11_wire_put32(p, (uint32_t)(v & 0xFFFFFFFFu));
+    y11_wire_put32((uint8_t *)p + 4, (uint32_t)(v >> 32));
+}
+
+static inline uint64_t y11_wire_get64(const void *p)
+{
+    return (uint64_t)y11_wire_get32(p) |
+           ((uint64_t)y11_wire_get32((const uint8_t *)p + 4) << 32);
+}
+
 /* Round a byte count up to a 4-byte boundary (X11 "pad(p)"). */
 static inline uint32_t y11_wire_pad4(uint32_t n)
 {
@@ -877,6 +909,8 @@ typedef char y11_wire_chk_put_image_req[(sizeof(y11_put_image_req) == 24) ? 1 : 
 typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : -1];
 typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_shm_query_version_reply[(sizeof(y11_shm_query_version_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_version_reply[(sizeof(y11_version_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_dri3_buffer_reply[(sizeof(y11_dri3_buffer_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_shm_attach_req[(sizeof(y11_shm_attach_req) == 16) ? 1 : -1];
 typedef char y11_wire_chk_shm_detach_req[(sizeof(y11_shm_detach_req) == 8) ? 1 : -1];
 typedef char y11_wire_chk_shm_put_image_req[(sizeof(y11_shm_put_image_req) == 40) ? 1 : -1];

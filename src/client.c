@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "y11.h"
@@ -44,12 +45,16 @@ struct y11_client *y11_client_create(int fd, int slot)
         free(c);
         return NULL;
     }
+    c->out_fd_pending = -1;
+    c->out_fd_offset = 0;
 
     return c;
 }
 
 void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
 {
+    size_t i;
+
     if (y11_debug)
         fprintf(stderr, "y11: client %d: disconnect\n", c->slot);
     /* Release window event subscriptions and redirect ownership. */
@@ -63,6 +68,14 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     y11_shm_purge_client(c);
     /* And its input grabs. */
     y11_grab_purge_client(c);
+    /* And any undelivered ancillary descriptors. */
+    for (i = 0; i < c->in_fd_count; i++)
+        close(c->in_fds[i]);
+    c->in_fd_count = 0;
+    if (c->out_fd_pending >= 0) {
+        close(c->out_fd_pending);
+        c->out_fd_pending = -1;
+    }
     if (c->fd >= 0)
         close(c->fd);
     free(c->in_buf);
@@ -95,13 +108,18 @@ static int y11_client_grow_inbuf(struct y11_client *c)
 
 /*
  * Read everything currently available from the socket into the client's
- * reassembly buffer.  Returns 0 on success (including clean EOF, which
+ * reassembly buffer, harvesting any ancillary file descriptors passed
+ * with SCM_RIGHTS.  Returns 0 on success (including clean EOF, which
  * marks the client dead), -1 on a fatal read error.
  */
 int y11_client_read(struct y11_client *c)
 {
     for (;;) {
         ssize_t n;
+        char control[CMSG_SPACE(sizeof(int) * 8)];
+        struct msghdr msg;
+        struct iovec iov;
+        struct cmsghdr *cmsg;
 
         if (c->in_len == c->in_cap) {
             int grown = y11_client_grow_inbuf(c);
@@ -111,9 +129,36 @@ int y11_client_read(struct y11_client *c)
                 return 0;       /* buffer at maximum: parse what we have */
         }
 
-        n = read(c->fd, c->in_buf + c->in_len, c->in_cap - c->in_len);
+        memset(&msg, 0, sizeof(msg));
+        iov.iov_base = c->in_buf + c->in_len;
+        iov.iov_len = c->in_cap - c->in_len;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof(control);
+
+        n = recvmsg(c->fd, &msg, 0);
         if (n > 0) {
             c->in_len += (size_t)n;
+            for (cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL;
+                 cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+                if (cmsg->cmsg_level == SOL_SOCKET &&
+                    cmsg->cmsg_type == SCM_RIGHTS) {
+                    size_t nfd = (cmsg->cmsg_len - CMSG_LEN(0)) /
+                                 sizeof(int);
+                    size_t i;
+
+                    for (i = 0; i < nfd; i++) {
+                        if (c->in_fd_count <
+                            sizeof(c->in_fds) / sizeof(c->in_fds[0])) {
+                            c->in_fds[c->in_fd_count++] =
+                                ((int *)CMSG_DATA(cmsg))[i];
+                        } else {
+                            close(((int *)CMSG_DATA(cmsg))[i]);
+                        }
+                    }
+                }
+            }
             continue;
         }
         if (n == 0) {
@@ -126,6 +171,110 @@ int y11_client_read(struct y11_client *c)
             return 0;
         return -1;
     }
+}
+
+/*
+ * Queue bytes for transmission, optionally carrying one ancillary file
+ * descriptor (SCM_RIGHTS) attached at the start of this chunk.  The
+ * event loop flushes pending output after each parse pass; POLLOUT
+ * resumes when the client catches up.
+ */
+int y11_client_send_fd(struct y11_client *c, const void *data, size_t len,
+                       int fd)
+{
+    /* A previous fd still pending: flush past it before queueing. */
+    if (c->out_fd_pending >= 0) {
+        if (y11_client_flush(c) < 0)
+            return -1;
+        if (c->out_fd_pending >= 0) {
+            /* Would block with an fd still attached: fail hard. */
+            return -1;
+        }
+    }
+
+    if (fd >= 0) {
+        c->out_fd_pending = fd;
+        c->out_fd_offset = c->out_len;
+    }
+    return y11_client_send(c, data, len);
+}
+
+/*
+ * Write all pending output, attaching the queued file descriptor with
+ * sendmsg when the reply it belongs to goes out.  Returns 1 when fully
+ * flushed, 0 when the client is not ready to accept more (POLLOUT will
+ * resume), -1 on error.
+ */
+int y11_client_flush(struct y11_client *c)
+{
+    while (c->out_len > 0) {
+        char control[CMSG_SPACE(sizeof(int))];
+        struct msghdr msg;
+        struct iovec iov;
+        struct cmsghdr *cmsg;
+        int attach_fd = -1;
+        ssize_t n;
+
+        if (c->out_fd_pending >= 0 &&
+            c->out_fd_offset < c->out_len) {
+            attach_fd = c->out_fd_pending;
+        }
+
+        memset(&msg, 0, sizeof(msg));
+        iov.iov_base = c->out_buf;
+        iov.iov_len = c->out_len;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        if (attach_fd >= 0) {
+            msg.msg_control = control;
+            msg.msg_controllen = sizeof(control);
+            cmsg = CMSG_FIRSTHDR(&msg);
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+            memcpy(CMSG_DATA(cmsg), &attach_fd, sizeof(int));
+        }
+
+        n = sendmsg(c->fd, &msg, MSG_NOSIGNAL);
+        if (n > 0) {
+            size_t sent = (size_t)n;
+
+            if (attach_fd >= 0) {
+                close(c->out_fd_pending);
+                c->out_fd_pending = -1;
+                c->out_fd_offset = 0;
+            } else if (c->out_fd_pending >= 0) {
+                c->out_fd_offset -= sent;
+            }
+            memmove(c->out_buf, c->out_buf + sent, c->out_len - sent);
+            c->out_len -= sent;
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            return 0;
+        return -1;
+    }
+    return 1;
+}
+
+/*
+ * Pop the oldest received ancillary descriptor, or -1 when the client
+ * sent none.  Used by DRI3 requests that carry a DMA-BUF.
+ */
+int y11_client_pop_fd(struct y11_client *c)
+{
+    int fd;
+    size_t i;
+
+    if (c->in_fd_count == 0)
+        return -1;
+    fd = c->in_fds[0];
+    for (i = 1; i < c->in_fd_count; i++)
+        c->in_fds[i - 1] = c->in_fds[i];
+    c->in_fd_count--;
+    return fd;
 }
 
 /* ---- output buffer --------------------------------------------------------- */
@@ -152,29 +301,6 @@ int y11_client_send(struct y11_client *c, const void *data, size_t len)
     memcpy(c->out_buf + c->out_len, data, len);
     c->out_len += len;
     return 0;
-}
-
-/*
- * Write all pending output.  Returns 1 when fully flushed, 0 when the
- * client is not ready to accept more (POLLOUT will resume), -1 on error.
- */
-int y11_client_flush(struct y11_client *c)
-{
-    while (c->out_len > 0) {
-        ssize_t n = write(c->fd, c->out_buf, c->out_len);
-
-        if (n > 0) {
-            memmove(c->out_buf, c->out_buf + n, c->out_len - (size_t)n);
-            c->out_len -= (size_t)n;
-            continue;
-        }
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-            return 0;
-        return -1;
-    }
-    return 1;
 }
 
 /* ---- connection setup handshake -------------------------------------------- */

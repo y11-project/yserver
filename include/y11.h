@@ -54,6 +54,12 @@ typedef uint32_t yid_t;
 #define Y11_SHM_EXT_OPCODE    130u      /* major opcode handed out for the extension */
 #define Y11_SHM_FIRST_EVENT    64u       /* ShmCompletion lands here */
 #define Y11_SHM_FIRST_ERROR    128u      /* BadShmSeg lands here */
+#define Y11_DRI3_NAME         "DRI3"
+#define Y11_DRI3_EXT_OPCODE   131u      /* major opcode handed out for the extension */
+#define Y11_PRESENT_NAME      "Present"
+#define Y11_PRESENT_EXT_OPCODE 132u      /* major opcode handed out for the extension */
+#define Y11_PRESENT_FIRST_EVENT 65u       /* Configure/Complete/Idle notify */
+#define Y11_PRESENT_FIRST_ERROR 129u      /* Present errors land here */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -195,7 +201,38 @@ struct y11_pixmap {
     y11_drawable_t    base;
     struct y11_client *owner;
     bool              is_shm;    /* MIT-SHM pixmaps share client memory */
+    bool              is_dri3;   /* DRI3 pixmaps share a DMA-BUF */
+    struct y11_dri3_buffer *dri3;
 };
+
+/*
+ * DRI3 buffer: a DMA-BUF imported (or exported) through DRM Prime,
+ * wrapped for scanout or CPU compositing.
+ */
+typedef struct y11_dri3_buffer {
+    int      prime_fd;     /* DMA-BUF file descriptor (-1 once imported) */
+    uint32_t gem_handle;   /* kernel GEM handle from Prime import */
+    uint32_t fb_id;        /* optional DRM framebuffer for scanout */
+    uint32_t stride;       /* pitch in bytes */
+    uint32_t size;         /* total buffer size in bytes */
+    uint32_t format;       /* DRM fourcc, e.g. DRM_FORMAT_XRGB8888 */
+    uint64_t modifier;     /* DRM format modifier (linear or tiled) */
+    void     *map;         /* CPU mapping when MAP_DUMB succeeds */
+    size_t   map_size;
+} y11_dri3_buffer_t;
+
+/*
+ * Present flip: one queued presentation of a pixmap to a window at a
+ * target media stream counter.
+ */
+typedef struct y11_present_flip {
+    uint32_t                event_id;
+    yid_t                   window_id;
+    yid_t                   pixmap_id;
+    uint64_t                target_msc;
+    uint32_t                options;    /* Copy or Async */
+    struct y11_present_flip *next;
+} y11_present_flip_t;
 
 /*
  * MIT-SHM segment: a SysV shared memory segment attached into the
@@ -383,6 +420,12 @@ struct y11_client {
     uint8_t *out_buf;           /* pending reply data */
     size_t out_len;             /* unsent bytes in out_buf */
     size_t out_cap;             /* allocated size of out_buf */
+
+    /* Ancillary file descriptors (SCM_RIGHTS). */
+    int    in_fds[8];            /* received, in arrival order */
+    size_t in_fd_count;
+    int    out_fd_pending;      /* fd to attach to the next flush, or -1 */
+    size_t out_fd_offset;       /* out_buf offset the fd belongs to */
 };
 
 /* ---- window map states and classes (X11 wire values) ------------------- */
@@ -495,11 +538,16 @@ int  y11_client_read(struct y11_client *c);
 int  y11_client_process(struct y11_client *c);
 int  y11_client_flush(struct y11_client *c);
 int  y11_client_send(struct y11_client *c, const void *data, size_t len);
+int  y11_client_send_fd(struct y11_client *c, const void *data, size_t len,
+                       int fd);
+int  y11_client_pop_fd(struct y11_client *c);
 
 /* ---- src/dispatch.c ----------------------------------------------------- */
 
 int  y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len);
 void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len);
+void y11_dispatch_send_reply_fd(struct y11_client *c, void *rep, size_t len,
+                                int fd);
 void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
                              uint32_t resource_id, uint8_t major_opcode);
 int  y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode);
@@ -679,6 +727,23 @@ int  y11_shm_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                  size_t data_off);
 void y11_shm_purge_client(struct y11_client *c);
 void y11_shm_purge_pixmaps(struct y11_shm_seg *seg);
+
+/* ---- src/dri3.c --------------------------------------------------------------------- */
+
+int  y11_dri3_init(int preferred_fd);
+void y11_dri3_shutdown(void);
+int  y11_dri3_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                  size_t data_off);
+void y11_dri3_release_buffer(struct y11_dri3_buffer *buf);
+int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
+
+/* ---- src/present.c -------------------------------------------------------------------- */
+
+int  y11_present_init(void);
+void y11_present_shutdown(void);
+int  y11_present_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                     size_t data_off);
+void y11_present_purge_client(struct y11_client *c);
 
 /* ---- misc ------------------------------------------------------------------------ */
 
