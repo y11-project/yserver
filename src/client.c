@@ -75,6 +75,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     y11_grab_purge_client(c);
     /* And its DRI3 shared-memory fences. */
     y11_dri3_fence_purge_client(c);
+    /* And its RENDER pictures and glyph sets. */
+    y11_render_purge_client(c);
     /* And its Present event selections. */
     y11_present_purge_client(c);
     /* And its selection ownerships. */
