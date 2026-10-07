@@ -193,14 +193,15 @@ static int y11_present_pixmap(struct y11_client *c, const uint8_t *pkt,
                              size_t len, size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    uint32_t window_id, pixmap_id, serial, options;
+    uint32_t window_id, pixmap_id, serial, options, idle_fence;
     int16_t x_off, y_off;
     struct y11_window *win;
     struct y11_pixmap *p;
     struct y11_output *out;
     int flipped = 0;
 
-    if (len - data_off != 68u)
+    /* 68 fixed bytes, then PRESENTNOTIFY entries (8 bytes each). */
+    if (len - data_off < 68u || ((len - data_off - 68u) & 7u) != 0u)
         return y11_dispatch_bad_length(c, pkt[0]);
 
     window_id = y11_wire_get32(body + 0);
@@ -209,6 +210,7 @@ static int y11_present_pixmap(struct y11_client *c, const uint8_t *pkt,
     x_off = (int16_t)y11_wire_get16(body + 20);
     y_off = (int16_t)y11_wire_get16(body + 22);
     options = y11_wire_get32(body + 36);
+    idle_fence = y11_wire_get32(body + 32);
 
     win = y11_window_get(window_id);
     p = y11_resource_get(pixmap_id, Y11_RESOURCE_PIXMAP);
@@ -314,7 +316,10 @@ presented:
                                        Y11_PRESENT_MODE_COPY,
                              event_id, serial, y11_present_ust(),
                              y11_present_msc);
-        /* The pixmap is immediately reusable (no flip reordering). */
+        /* The pixmap is immediately reusable (no flip reordering):
+         * release the idle fence handed in with the request (Mesa
+         * wraps every swapchain buffer in an xshmfence page). */
+        y11_dri3_fence_trigger(idle_fence);
         y11_present_idle(win, event_id, serial, pixmap_id);
     }
     (void)options;

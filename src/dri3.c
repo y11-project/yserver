@@ -6,8 +6,9 @@
  * descriptor through SCM_RIGHTS, letting Mesa open the GPU without
  * root.  DRI3PixmapFromBuffer imports a client DMA-BUF through DRM
  * Prime into a server GEM handle wrapped as a pixmap; DRI3Buffer-
- * FromPixmap exports the reverse.  Fences arrive as sync files and are
- * consumed for GPU-CPU synchronization.
+ * FromPixmap exports the reverse.  Fences arrive as shared xshmfence
+ * pages that the server triggers when a presented buffer becomes
+ * idle again.
  *
  * GEM and Prime ioctls are unprivileged operations on the render
  * node; no DRM master is needed for any of this.
@@ -15,12 +16,19 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+/* syscall(2) is a BSD extension not declared under strict POSIX. */
+extern long syscall(long number, ...);
+#elif defined(__FreeBSD__)
+#include <sys/umtx.h>
+#endif
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -191,6 +199,32 @@ static int y11_dri3_query_version(struct y11_client *c, const uint8_t *pkt,
 
 /* ---- DRI3Open (1) ----------------------------------------------------------- */
 
+/*
+ * Clients receive a render node fd, like on a real server: Mesa's
+ * driver allocates real GEM buffers through it (the i915 render node
+ * refuses dumb buffers with EPERM, but direct rendering never needs
+ * them).  The server keeps its own card fd for Prime imports and the
+ * dumb-buffer CPU maps used by the Present blit path.
+ */
+static int y11_dri3_client_fd(void)
+{
+    static const char *const render_paths[] = {
+        "/dev/dri/renderD128", "/dev/dri/renderD129", NULL
+    };
+    int i;
+
+    for (i = 0; render_paths[i] != NULL; i++) {
+        int fd = open(render_paths[i], O_RDWR | O_CLOEXEC);
+
+        if (fd >= 0)
+            return fd;
+    }
+    /* No render node: fall back to the server's own device fd. */
+    if (y11_dri3_fd >= 0)
+        return fcntl(y11_dri3_fd, F_DUPFD_CLOEXEC, 0);
+    return -1;
+}
+
 static int y11_dri3_open(struct y11_client *c, const uint8_t *pkt,
                          size_t len, size_t data_off)
 {
@@ -211,7 +245,7 @@ static int y11_dri3_open(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
-    fd = fcntl(y11_dri3_fd, F_DUPFD_CLOEXEC, 0);
+    fd = y11_dri3_client_fd();
     if (fd < 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
         return 0;
@@ -444,14 +478,93 @@ static int y11_dri3_buffer_from_pixmap(struct y11_client *c,
 
 /* ---- DRI3FenceFromFD (4) ------------------------------------------------------------- */
 
+/*
+ * DRI3 fences are shared-memory xshmfence pages: the client mmaps a
+ * page, hands the fd over, and then waits on the page's 32-bit value
+ * with futexes.  Triggering the fence means storing a non-zero value
+ * and waking the waiters, exactly like libxshmfence does.  Mesa wraps
+ * every DRI3 swapchain buffer in one and passes its XID as the idle
+ * fence of PresentPixmap: the server triggers it once the buffer is
+ * no longer needed for scanout.
+ */
+struct y11_dri3_fence {
+    struct y11_dri3_fence *next;
+    struct y11_client    *client;
+    yid_t                fence;      /* XSyncFence XID chosen by the client */
+    yid_t                pixmap;     /* pixmap the fence was created on */
+    volatile int32_t     *page;      /* mapped fence page (int32 at offset 0) */
+};
+
+static struct y11_dri3_fence *y11_dri3_fences;
+
+/* Wake every xshmfence waiter sleeping on this page. */
+static void y11_dri3_fence_wake(volatile int32_t *page)
+{
+#if defined(__linux__)
+    syscall(SYS_futex, (int *)(uintptr_t)page, 1 /* FUTEX_WAKE */,
+            0x7fffffff);
+#elif defined(__FreeBSD__)
+    _umtx_op((void *)(uintptr_t)page, UMTX_OP_WAKE,
+             (void *)(uintptr_t)0x7fffffff, NULL, NULL);
+#endif
+}
+
+/* Store the triggered value like libxshmfence's xshmfence_trigger. */
+static void y11_dri3_fence_signal(struct y11_dri3_fence *f)
+{
+    if (f->page != NULL && *f->page == 0) {
+        *f->page = 1;
+        y11_dri3_fence_wake(f->page);
+    }
+}
+
+/* Trigger the fence registered under this XID, if any. */
+void y11_dri3_fence_trigger(yid_t fence)
+{
+    struct y11_dri3_fence *f;
+
+    for (f = y11_dri3_fences; f != NULL; f = f->next) {
+        if (f->fence == fence) {
+            y11_dri3_fence_signal(f);
+            return;
+        }
+    }
+}
+
+/* Release every fence a client created (disconnect cleanup). */
+void y11_dri3_fence_purge_client(struct y11_client *c)
+{
+    struct y11_dri3_fence **link = &y11_dri3_fences;
+
+    while (*link != NULL) {
+        struct y11_dri3_fence *f = *link;
+
+        if (f->client == c) {
+            *link = f->next;
+            munmap((void *)(uintptr_t)f->page, 4096);
+            free(f);
+        } else {
+            link = &f->next;
+        }
+    }
+}
+
 static int y11_dri3_fence_from_fd(struct y11_client *c, const uint8_t *pkt,
                                   size_t len, size_t data_off)
 {
+    const uint8_t *body = pkt + data_off;
+    uint32_t pixmap_id, fence_id;
+    uint8_t initially_triggered;
+    struct y11_dri3_fence *f;
+    volatile int32_t *page;
     int fd;
-    struct pollfd pfd;
 
-    if (len - data_off != 12u)  /* drawable, fence, initially-triggered */
+    if (len - data_off != 12u)  /* pixmap, fence, initially-triggered */
         return y11_dispatch_bad_length(c, pkt[0]);
+
+    pixmap_id = y11_wire_get32(body + 0);
+    fence_id = y11_wire_get32(body + 4);
+    initially_triggered = body[8];
 
     fd = y11_client_pop_fd(c);
     if (fd < 0) {
@@ -459,17 +572,28 @@ static int y11_dri3_fence_from_fd(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
-    /*
-     * Sync files signal via poll(2) readability.  Consume the fence:
-     * wait briefly for it to signal so the buffer it guards is ready,
-     * then release the descriptor.
-     */
-    pfd.fd = fd;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-    while (poll(&pfd, 1, 5000) == 0)
-        ;                       /* signaled sync files poll ready */
+    page = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
+    if (page == MAP_FAILED) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
+        return 0;
+    }
+
+    f = calloc(1, sizeof(*f));
+    if (f == NULL) {
+        munmap((void *)page, 4096);
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
+        return 0;
+    }
+    f->client = c;
+    f->fence = fence_id;
+    f->pixmap = pixmap_id;
+    f->page = page;
+    f->next = y11_dri3_fences;
+    y11_dri3_fences = f;
+
+    if (initially_triggered)
+        y11_dri3_fence_signal(f);
     return 0;                   /* no reply */
 }
 

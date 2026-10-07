@@ -780,6 +780,8 @@ int  y11_dri3_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                   size_t data_off);
 void y11_dri3_release_buffer(struct y11_dri3_buffer *buf);
 int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
+void y11_dri3_fence_trigger(yid_t fence);
+void y11_dri3_fence_purge_client(struct y11_client *c);
 
 void y11_colormap_purge_client(struct y11_client *c);
 void y11_font_purge_client(struct y11_client *c);
