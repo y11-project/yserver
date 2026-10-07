@@ -66,7 +66,14 @@ int y11_pixmap_req_create(struct y11_client *c, const uint8_t *pkt,
     height = y11_wire_get16(body + 10);
     depth = pkt[1];             /* header data byte, both request forms */
 
-    if (width == 0 || height == 0 || (depth != 1 && depth != 24)) {
+    /*
+     * The depths a full server advertises (1/4/8/16/24/32); storage
+     * stays 32bpp internally, the image requests convert at the wire
+     * boundary.
+     */
+    if (width == 0 || height == 0 ||
+        (depth != 1 && depth != 4 && depth != 8 && depth != 16 &&
+         depth != 24 && depth != 32)) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, depth, pkt[0]);
         return 0;
     }

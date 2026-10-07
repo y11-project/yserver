@@ -356,20 +356,19 @@ static int y11_client_refuse(struct y11_client *c, size_t *off,
  *   prefix        8 bytes   success, protocol version, additional length
  *   fixed info   32 bytes   release, resource ids, vendor, formats, limits
  *   vendor       16 bytes   "The Y11 Project" padded to a 4-byte boundary
- *   formats      16 bytes   1-bit bitmap and 32-bit pixmap formats
+ *   formats      24 bytes   1/24/32-bit pixmap formats
  *   screen       40 bytes   root window, colormap, geometry, visuals
- *   depth         8 bytes   root depth 24 with one visual
+ *   depths       40 bytes   1, 4, 8, 24 (with the visual), 32
  *   visual       24 bytes   TrueColor visual
  *
- *   Total: 8 + 32 + 16 + 16 + 40 + 8 + 24 = 144 bytes.
+ *   Total: 8 + 32 + 16 + 24 + 40 + 40 + 24 = 176 bytes.
  */
 static int y11_client_send_setup_success(struct y11_client *c)
 {
     y11_conn_setup_prefix prefix;
     y11_conn_setup_info info;
-    y11_pixmap_format formats[2];
+    y11_pixmap_format formats[3];
     y11_screen_info screen;
-    y11_depth_info depth;
     y11_visual_type visual;
     static const char vendor[] = Y11_VENDOR_STRING;
     static const uint8_t vendor_pad[4] = { 0, 0, 0, 0 };
@@ -377,9 +376,11 @@ static int y11_client_send_setup_success(struct y11_client *c)
     uint32_t vend_padded = y11_wire_pad4((uint32_t)vlen);   /* 16 */
     uint32_t additional;
 
-    /* 8-byte setup prefix */
+    /* 8-byte setup prefix: five depth entries (1/4/8/24/32) with the
+     * TrueColor visual under depth 24. */
     additional = 32u + vend_padded + (uint32_t)(sizeof(formats)) +
-                 (uint32_t)(sizeof(screen)) + (uint32_t)(sizeof(depth)) +
+                 (uint32_t)(sizeof(screen)) +
+                 5u * (uint32_t)(sizeof(y11_depth_info)) +
                  (uint32_t)(sizeof(visual));
 
     memset(&prefix, 0, sizeof(prefix));
@@ -397,7 +398,7 @@ static int y11_client_send_setup_success(struct y11_client *c)
     y11_wire_put16(&info.vendor_len, (uint16_t)vlen);
     y11_wire_put16(&info.max_request_size, (uint16_t)Y11_MAX_REQUEST_UNITS);
     info.num_screens = 1;
-    info.num_formats = 2;
+    info.num_formats = 3;
     info.image_byte_order = 0;          /* LSBFirst */
     info.bitmap_bit_order = 0;          /* Least Significant first */
     info.bitmap_scanline_unit = 32;
@@ -413,6 +414,9 @@ static int y11_client_send_setup_success(struct y11_client *c)
     formats[1].depth = 24;
     formats[1].bits_per_pixel = 32;
     formats[1].scanline_pad = 32;
+    formats[2].depth = 32;
+    formats[2].bits_per_pixel = 32;
+    formats[2].scanline_pad = 32;
 
     /* 40-byte screen information */
     memset(&screen, 0, sizeof(screen));
@@ -431,41 +435,56 @@ static int y11_client_send_setup_success(struct y11_client *c)
     screen.backing_stores = 0;          /* Never */
     screen.save_unders = 0;
     screen.root_depth = 24;
-    screen.allowed_depths = 1;
+    screen.allowed_depths = 5;
 
-    /* 8-byte depth information for the root depth */
-    memset(&depth, 0, sizeof(depth));
-    depth.depth = 24;
-    y11_wire_put16(&depth.visuals_count, 1);
+    /* 8-byte depth information: 1, 4, 8, 24 (with the visual), 32.
+     * libXrender requires every one of these to be advertised before
+     * it will even ask for the RENDER extension. */
+    {
+        uint8_t depths[5] = { 1, 4, 8, 24, 32 };
+        int d;
 
-    /* 24-byte visual information */
-    memset(&visual, 0, sizeof(visual));
-    y11_wire_put32(&visual.visual_id, Y11_SCREEN_VISUAL);
-    visual.class = 4;                   /* TrueColor */
-    visual.bits_per_rgb = 8;
-    y11_wire_put16(&visual.colormap_entries, 256);
-    y11_wire_put32(&visual.red_mask, 0x00FF0000u);
-    y11_wire_put32(&visual.green_mask, 0x0000FF00u);
-    y11_wire_put32(&visual.blue_mask, 0x000000FFu);
+        if (y11_client_send(c, &prefix, sizeof(prefix)) != 0)
+            return -1;
+        if (y11_client_send(c, &info, sizeof(info)) != 0)
+            return -1;
+        if (y11_client_send(c, vendor, vlen) != 0)
+            return -1;
+        if (y11_client_send(c, vendor_pad, vend_padded - vlen) != 0)
+            return -1;
+        if (y11_client_send(c, formats, sizeof(formats)) != 0)
+            return -1;
+        if (y11_client_send(c, &screen, sizeof(screen)) != 0)
+            return -1;
 
-    if (y11_client_send(c, &prefix, sizeof(prefix)) != 0)
-        return -1;
-    if (y11_client_send(c, &info, sizeof(info)) != 0)
-        return -1;
-    if (y11_client_send(c, vendor, vlen) != 0)
-        return -1;
-    if (y11_client_send(c, vendor_pad, vend_padded - vlen) != 0)
-        return -1;
-    if (y11_client_send(c, formats, sizeof(formats)) != 0)
-        return -1;
-    if (y11_client_send(c, &screen, sizeof(screen)) != 0)
-        return -1;
-    if (y11_client_send(c, &depth, sizeof(depth)) != 0)
-        return -1;
-    if (y11_client_send(c, &visual, sizeof(visual)) != 0)
-        return -1;
+        for (d = 0; d < 5; d++) {
+            y11_depth_info di;
 
-    return 0;
+            memset(&di, 0, sizeof(di));
+            di.depth = depths[d];
+            if (depths[d] == 24) {
+                y11_wire_put16(&di.visuals_count, 1);
+                if (y11_client_send(c, &di, sizeof(di)) != 0)
+                    return -1;
+                /* 24-byte visual information */
+                memset(&visual, 0, sizeof(visual));
+                y11_wire_put32(&visual.visual_id, Y11_SCREEN_VISUAL);
+                visual.class = 4;               /* TrueColor */
+                visual.bits_per_rgb = 8;
+                y11_wire_put16(&visual.colormap_entries, 256);
+                y11_wire_put32(&visual.red_mask, 0x00FF0000u);
+                y11_wire_put32(&visual.green_mask, 0x0000FF00u);
+                y11_wire_put32(&visual.blue_mask, 0x000000FFu);
+                if (y11_client_send(c, &visual, sizeof(visual)) != 0)
+                    return -1;
+                continue;
+            }
+            /* depths without visuals: legal (pixmap-only) */
+            if (y11_client_send(c, &di, sizeof(di)) != 0)
+                return -1;
+        }
+        return 0;
+    }
 }
 
 /*
