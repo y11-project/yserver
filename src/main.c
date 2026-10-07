@@ -390,6 +390,9 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /* Publish the EWMH root properties on the freshly created root. */
+    y11_atom_publish_root_properties(y11_window_get(Y11_SCREEN_ROOT));
+
     if (y11_input_init() != 0) {
         fprintf(stderr, "y11: cannot initialize the input subsystem\n");
         y11_server_shutdown(&srv);

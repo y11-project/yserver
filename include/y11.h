@@ -820,6 +820,7 @@ struct y11_window *y11_window_at_point(int32_t x, int32_t y);
 /* ---- src/atom.c --------------------------------------------------------- */
 
 int  y11_atom_init(void);
+void y11_atom_publish_root_properties(struct y11_window *root);
 void y11_atom_shutdown(void);
 yid_t y11_atom_intern(const char *name, size_t len, int only_if_exists);
 const char *y11_atom_name(yid_t atom);

@@ -17,6 +17,35 @@
 
 #define Y11_PREDEF_ATOM_COUNT 68
 
+/*
+ * EWMH root property atoms: interned at startup and advertised in
+ * _NET_SUPPORTED so window managers and taskbars can discover the
+ * server's capabilities.
+ */
+static const char *const y11_ewmh_atoms[] = {
+    "_NET_SUPPORTED",
+    "_NET_SUPPORTING_WM_CHECK",
+    "_NET_CLIENT_LIST",
+    "_NET_CLIENT_LIST_STACKING",
+    "_NET_ACTIVE_WINDOW",
+    "_NET_WM_NAME",
+    "_NET_WM_STATE",
+    "_NET_WM_STATE_FOCUSED",
+    "_NET_WM_STATE_FULLSCREEN",
+    "_NET_WM_WINDOW_TYPE",
+    "_NET_WM_WINDOW_TYPE_NORMAL",
+    "_NET_WM_ALLOWED_ACTIONS",
+    "_NET_WM_ACTION_CLOSE",
+    "_NET_CLOSE_WINDOW",
+    "_NET_NUMBER_OF_DESKTOPS",
+    "_NET_CURRENT_DESKTOP",
+    "_NET_WORKAREA",
+    "_NET_DESKTOP_GEOMETRY",
+    "WM_PROTOCOLS",
+    "WM_DELETE_WINDOW",
+    "WM_STATE"
+};
+
 static const char *const y11_predef_atoms[Y11_PREDEF_ATOM_COUNT + 1] = {
     NULL,                       /* 0: None */
     "PRIMARY",                  /* 1 */
@@ -123,6 +152,81 @@ static int y11_atom_name_eq(const char *a, size_t alen,
 int y11_atom_init(void)
 {
     return 0;                   /* static tables need no setup */
+}
+
+/*
+ * Intern the EWMH atoms and publish the standard root properties:
+ * _NET_SUPPORTED lists every supported _NET atom, _NET_CLIENT_LIST
+ * starts empty (the window manager maintains it), _NET_ACTIVE_WINDOW
+ * starts at 0.  WM_PROTOCOLS / WM_DELETE_WINDOW are interned so window
+ * managers can route clean client close requests.
+ */
+void y11_atom_publish_root_properties(struct y11_window *root)
+{
+    uint32_t ids[sizeof(y11_ewmh_atoms) / sizeof(y11_ewmh_atoms[0])];
+    size_t i;
+    size_t count = sizeof(y11_ewmh_atoms) / sizeof(y11_ewmh_atoms[0]);
+    uint32_t zero = 0;
+
+    if (root == NULL)
+        return;
+
+    for (i = 0; i < count; i++) {
+        size_t len = strlen(y11_ewmh_atoms[i]);
+
+        ids[i] = y11_atom_intern(y11_ewmh_atoms[i], len, 0);
+    }
+
+    /* _NET_SUPPORTED: the advertised list (every atom above). */
+    (void)y11_property_store(root, ids[0], 4 /* XA_ATOM */, 32,
+                             (const uint8_t *)ids, count * 4u);
+
+    /* _NET_SUPPORTING_WM_CHECK: points at the WM's check window; the
+     * server publishes 0 until a WM registers one. */
+    (void)y11_property_store(root, ids[1], 33 /* WINDOW */, 32,
+                             (const uint8_t *)&zero, sizeof(zero));
+
+    /* _NET_CLIENT_LIST: empty WINDOW list; the WM maintains it. */
+    (void)y11_property_store(root, ids[2], 33, 32,
+                             (const uint8_t *)&zero, 0);
+
+    /* _NET_ACTIVE_WINDOW: none. */
+    (void)y11_property_store(root, ids[4], 33, 32,
+                             (const uint8_t *)&zero, sizeof(zero));
+
+    /* _NET_NUMBER_OF_DESKTOPS: one. */
+    {
+        uint32_t one = 1;
+
+        (void)y11_property_store(root, ids[14], 6 /* XA_CARDINAL */, 32,
+                                 (const uint8_t *)&one, sizeof(one));
+    }
+
+    /* _NET_CURRENT_DESKTOP: 0. */
+    (void)y11_property_store(root, ids[15], 6, 32,
+                             (const uint8_t *)&zero, sizeof(zero));
+
+    /* _NET_WORKAREA: x, y, width, height of the usable area. */
+    {
+        uint32_t work[4];
+
+        work[0] = 0;
+        work[1] = 0;
+        work[2] = y11_screen_width;
+        work[3] = y11_screen_height;
+        (void)y11_property_store(root, ids[16], 6, 32,
+                                 (const uint8_t *)work, sizeof(work));
+    }
+
+    /* _NET_DESKTOP_GEOMETRY: width, height. */
+    {
+        uint32_t geo[2];
+
+        geo[0] = y11_screen_width;
+        geo[1] = y11_screen_height;
+        (void)y11_property_store(root, ids[17], 6, 32,
+                                 (const uint8_t *)geo, sizeof(geo));
+    }
 }
 
 void y11_atom_shutdown(void)
