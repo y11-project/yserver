@@ -934,6 +934,59 @@ void y11_font_purge_client(struct y11_client *c)
                             NULL);
 }
 
+/* ---- XFIXES cursor names ------------------------------------------------------ */
+
+struct y11_cursor_name {
+    struct y11_cursor_name *next;
+    yid_t    cursor;
+    char     *name;
+};
+
+static struct y11_cursor_name *y11_cursor_names;
+
+/* SetCursorName (23): store the name against the cursor XID. */
+static void y11_xfixes_set_cursor_name(uint32_t cursor, uint32_t nbytes,
+                                       const uint8_t *name)
+{
+    struct y11_cursor_name **link = &y11_cursor_names;
+    char *copy;
+
+    while (*link != NULL) {
+        if ((*link)->cursor == cursor)
+            break;
+        link = &(*link)->next;
+    }
+    copy = malloc((size_t)nbytes + 1u);
+    if (copy == NULL)
+        return;
+    memcpy(copy, name, nbytes);
+    copy[nbytes] = '\0';
+
+    if (*link == NULL) {
+        *link = calloc(1, sizeof(**link));
+        if (*link == NULL) {
+            free(copy);
+            return;
+        }
+        (*link)->cursor = cursor;
+    } else {
+        free((*link)->name);
+    }
+    (*link)->name = copy;
+}
+
+/* GetCursorName (24): the stored name, or NULL. */
+static const char *y11_xfixes_get_cursor_name(uint32_t cursor)
+{
+    struct y11_cursor_name *n;
+
+    for (n = y11_cursor_names; n != NULL; n = n->next) {
+        if (n->cursor == cursor)
+            return n->name;
+    }
+    return NULL;
+}
+
 /* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
 static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off)
@@ -1401,6 +1454,37 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
                 y11_wire_put32(&vr.major, 5);
                 y11_wire_put32(&vr.minor, 0);
                 y11_dispatch_send_reply(c, &vr, sizeof(vr));
+                return 0;
+            }
+            /* SetCursorName (23): cursor, nbytes, name. */
+            if (pkt[1] == 23 && len >= 12u) {
+                uint32_t cursor = y11_wire_get32(pkt + data_off);
+                uint32_t nbytes = y11_wire_get16(pkt + data_off + 4);
+
+                if ((size_t)nbytes <= len - data_off - 8u)
+                    y11_xfixes_set_cursor_name(cursor, nbytes,
+                                               pkt + data_off + 8);
+                return 0;
+            }
+            /* GetCursorName (24): atom, nbytes, then the name. */
+            if (pkt[1] == 24 && len == 8u) {
+                uint32_t cursor = y11_wire_get32(pkt + data_off);
+                const char *name = y11_xfixes_get_cursor_name(cursor);
+                uint8_t rep[32];
+
+                memset(rep, 0, sizeof(rep));
+                rep[0] = 1;
+                if (name != NULL) {
+                    size_t slen = strlen(name);
+
+                    y11_wire_put32(rep + 8, 0);  /* no atom: unnamed */
+                    y11_wire_put32(rep + 12, (uint32_t)slen);
+                    y11_dispatch_send_reply(c, rep, sizeof(rep));
+                    y11_client_send(c, (const uint8_t *)name, slen);
+                } else {
+                    y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR,
+                                            cursor, pkt[0]);
+                }
                 return 0;
             }
             y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, pkt[1],

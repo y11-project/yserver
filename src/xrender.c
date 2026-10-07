@@ -325,7 +325,7 @@ static int y11_render_query_version(struct y11_client *c,
     y11_version_reply rep;
 
     (void)data_off;
-    if (len != 8u)              /* major, minor */
+    if (len != 12u)             /* header + major + minor */
         return y11_dispatch_bad_length(c, pkt[0]);
 
     memset(&rep, 0, sizeof(rep));
@@ -502,7 +502,7 @@ static int y11_render_create_solid_fill(struct y11_client *c,
     uint16_t red, green, blue, alpha;
     struct y11_render_picture *p;
 
-    if (len - data_off != 8u)
+    if (len - data_off != 12u)  /* pid, color */
         return y11_dispatch_bad_length(c, pkt[0]);
 
     pid = y11_wire_get32(body + 0);
@@ -920,6 +920,7 @@ int y11_render_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_RENDER_SET_PICTURE_CLIP_RECTANGLES:
     case Y11_RENDER_FREE_GLYPHS:
     case Y11_RENDER_COMPOSITE:
+    case 27:                    /* RenderCreateCursor: decorative */
         return 0;               /* accepted, no reply */
     default:
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, pkt[1], pkt[0]);
