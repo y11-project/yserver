@@ -231,6 +231,16 @@ static int y11_dispatch_send_event(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
+    /*
+     * A zero event mask means "deliver to the client that created
+     * the destination window" (the usual WM_DELETE_WINDOW shape).
+     */
+    if (event_mask == 0) {
+        y11_wire_put32(ev + 4, win->id);
+        y11_event_dispatch32(win->owner, ev, sizeof(ev));
+        return 0;
+    }
+
     for (; win != NULL; win = win->parent) {
         const struct y11_event_sub *sub;
 
