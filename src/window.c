@@ -155,18 +155,23 @@ static void y11_window_detach(struct y11_window *win)
     win->next_sibling = NULL;
 }
 
-/* Insert at the bottom of the parent's stacking order (default placement). */
-static void y11_window_attach_bottom(struct y11_window *parent,
-                                     struct y11_window *child)
+/*
+ * Insert at the top of the parent's stacking order.  The X protocol
+ * places newly created and newly reparented windows above their
+ * siblings, and the stacking list runs bottom (first_child) to top
+ * (last_child).
+ */
+static void y11_window_attach_top(struct y11_window *parent,
+                                  struct y11_window *child)
 {
     child->parent = parent;
-    child->prev_sibling = NULL;
-    child->next_sibling = parent->first_child;
-    if (parent->first_child != NULL)
-        parent->first_child->prev_sibling = child;
+    child->prev_sibling = parent->last_child;
+    child->next_sibling = NULL;
+    if (parent->last_child != NULL)
+        parent->last_child->next_sibling = child;
     else
-        parent->last_child = child;
-    parent->first_child = child;
+        parent->first_child = child;
+    parent->last_child = child;
 }
 
 /* Insert directly above `sibling` (higher in the bottom-to-top list).
@@ -767,7 +772,7 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
         return 0;
     }
-    y11_window_attach_bottom(parent, win);
+    y11_window_attach_top(parent, win);
     y11_window_recompute_abs(win);
 
     if (vals.have_event_mask) {
@@ -1065,7 +1070,7 @@ int y11_window_req_reparent(struct y11_client *c, const uint8_t *pkt,
     y11_window_detach(win);
     win->x = (int16_t)y11_wire_get16(body + 8);
     win->y = (int16_t)y11_wire_get16(body + 10);
-    y11_window_attach_bottom(new_parent, win);
+    y11_window_attach_top(new_parent, win);
     y11_window_recompute_abs(win);
 
     /* Maintain map states across the reparent. */
