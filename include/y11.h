@@ -453,8 +453,21 @@ struct y11_event_sub {
 /* ---- windows ------------------------------------------------------------ */
 
 /*
- * Pointer state: root coordinates, pressed buttons, and the window
- * directly under the cursor.
+ * Property storage: (name, type, format, data) attached to a window.
+ */
+struct y11_property {
+    struct y11_window  *window;
+    struct y11_property *next;
+    yid_t              name;      /* property atom */
+    yid_t              type;      /* type atom (None for untyped) */
+    uint8_t            format;    /* 8, 16 or 32 */
+    uint8_t            *data;
+    size_t             size;      /* bytes */
+};
+
+/*
+ * Pointer and keyboard state: root coordinates, pressed buttons, and the
+ * window directly under the cursor.
  */
 typedef struct y11_pointer {
     int16_t  root_x;
@@ -504,6 +517,9 @@ struct y11_window {
     uint32_t            all_event_masks;    /* bitwise OR of all client masks */
     struct y11_event_sub *event_subs;       /* per-client event mask list */
     struct y11_client  *substructure_redirect_client;   /* active WM client */
+
+    /* Attached properties (ChangeProperty and friends). */
+    struct y11_property *props;
 
     /* Backing pixel buffer (InputOnly windows have none) */
     y11_drawable_t      drawable;
@@ -736,6 +752,24 @@ int  y11_dri3_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                   size_t data_off);
 void y11_dri3_release_buffer(struct y11_dri3_buffer *buf);
 int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
+
+/* ---- src/property.c ---------------------------------------------------------------- */
+
+int  y11_property_req_change(struct y11_client *c, const uint8_t *pkt,
+                             size_t len, size_t data_off);
+int  y11_property_req_get(struct y11_client *c, const uint8_t *pkt,
+                         size_t len, size_t data_off);
+int  y11_property_req_delete(struct y11_client *c, const uint8_t *pkt,
+                            size_t len, size_t data_off);
+int  y11_property_req_list(struct y11_client *c, const uint8_t *pkt,
+                          size_t len, size_t data_off);
+struct y11_property *y11_property_find(struct y11_window *win, yid_t name);
+void y11_property_destroy_all(struct y11_window *win);
+size_t format_bytes(uint8_t format);
+
+/* Store a property on a window (used for the EWMH root properties). */
+int y11_property_store(struct y11_window *win, yid_t name, yid_t type,
+                      uint8_t format, const uint8_t *data, size_t size);
 
 /* ---- src/present.c -------------------------------------------------------------------- */
 

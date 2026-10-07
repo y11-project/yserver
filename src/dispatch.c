@@ -423,49 +423,9 @@ static int y11_dispatch_bigreq_enable(struct y11_client *c)
 }
 
 /*
- * ListProperties: y11 exposes no properties yet, so the reply reports an
- * empty atom list.  Valid for any window id.
+ * ListProperties (opcode 21): one atom per stored property.
+ * Handled in src/property.c.
  */
-static int y11_dispatch_list_properties(struct y11_client *c,
-                                        const uint8_t *pkt, size_t len,
-                                        size_t data_off)
-{
-    y11_list_properties_reply rep;
-
-    if (len - data_off != 4u)   /* window id */
-        return y11_dispatch_bad_length(c, pkt[0]);
-
-    memset(&rep, 0, sizeof(rep));
-    rep.hdr.type = 1;           /* X_Reply */
-    y11_wire_put32(&rep.hdr.length, 0);
-    y11_wire_put16(&rep.n_properties, 0);
-
-    y11_dispatch_send_reply(c, &rep, sizeof(rep));
-    return 0;
-}
-
-/*
- * GetProperty: no properties exist on any y11 window, so the reply
- * reports type None with format 0 and no data (the standard
- * "property not present" reply).
- */
-static int y11_dispatch_get_property(struct y11_client *c,
-                                     const uint8_t *pkt, size_t len,
-                                     size_t data_off)
-{
-    y11_get_property_reply rep;
-
-    if (len - data_off != 20u)  /* window, property, type, offset, length */
-        return y11_dispatch_bad_length(c, pkt[0]);
-
-    memset(&rep, 0, sizeof(rep));
-    rep.hdr.type = 1;           /* X_Reply */
-    rep.hdr.pad0 = 0;           /* format: 0 (not present) */
-    y11_wire_put32(&rep.hdr.length, 0);
-
-    y11_dispatch_send_reply(c, &rep, sizeof(rep));
-    return 0;
-}
 
 static int y11_dispatch_get_input_focus(struct y11_client *c)
 {
@@ -959,9 +919,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_LOOKUP_COLOR:
         return y11_dispatch_lookup_color(c, pkt, len, data_off);
     case Y11_REQ_LIST_PROPERTIES:
-        return y11_dispatch_list_properties(c, pkt, len, data_off);
+        return y11_property_req_list(c, pkt, len, data_off);
     case Y11_REQ_GET_PROPERTY:
-        return y11_dispatch_get_property(c, pkt, len, data_off);
+        return y11_property_req_get(c, pkt, len, data_off);
     case Y11_REQ_SET_INPUT_FOCUS:
         return y11_input_req_set_input_focus(c, pkt, len, data_off);
     case Y11_REQ_GRAB_POINTER:
@@ -1014,11 +974,13 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_gc_req_set_clip_rectangles(c, pkt, len, data_off);
     case Y11_REQ_FREE_GC:
         return y11_gc_req_free(c, pkt, len, data_off);
+    case Y11_REQ_CHANGE_PROPERTY:
+        return y11_property_req_change(c, pkt, len, data_off);
+    case Y11_REQ_DELETE_PROPERTY:
+        return y11_property_req_delete(c, pkt, len, data_off);
     case Y11_REQ_FREE_COLORS:
     case Y11_REQ_STORE_COLORS:
     case Y11_REQ_STORE_NAMED_COLOR:
-    case Y11_REQ_CHANGE_PROPERTY:
-    case Y11_REQ_DELETE_PROPERTY:
     case Y11_REQ_ALLOW_EVENTS:
     case Y11_REQ_FORCE_SCREEN_SAVER:
     case Y11_REQ_COPY_PLANE:

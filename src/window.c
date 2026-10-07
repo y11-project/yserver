@@ -446,6 +446,7 @@ static void y11_window_free_tree(struct y11_window *win)
     }
     y11_window_detach(win);
     y11_window_free_drawable(win);
+    y11_property_destroy_all(win);
     y11_window_free_subs(win);
     y11_resource_remove(win->id);
     free(win);
@@ -460,6 +461,7 @@ static void y11_window_destroy_tree(struct y11_window *win)
     y11_event_send_destroy(win);
     y11_window_detach(win);
     y11_window_free_drawable(win);
+    y11_property_destroy_all(win);
     y11_window_free_subs(win);
     y11_resource_remove(win->id);
     free(win);
