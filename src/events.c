@@ -273,6 +273,51 @@ void y11_event_send_map_request(struct y11_window *win)
     y11_event_dispatch32(wm, &ev, sizeof(ev));
 }
 
+/*
+ * CirculateRequest (27): dispatched ONLY to the window's redirecting
+ * client, carrying the child the request would move and the requested
+ * direction in `place` (0 = raise it to the top, 1 = lower it).
+ */
+void y11_event_send_circulate_request(struct y11_window *parent,
+                                      struct y11_window *child,
+                                      uint8_t place)
+{
+    y11_circulate_event ev;
+    struct y11_client *wm;
+
+    wm = parent->substructure_redirect_client;
+    if (wm == NULL)
+        return;
+
+    memset(&ev, 0, sizeof(ev));
+    y11_event_set_type(&ev, Y11_EVT_CIRCULATE_REQUEST);
+    y11_wire_put32(&ev.event, parent->id);
+    y11_wire_put32(&ev.window, child->id);
+    y11_wire_put32(&ev.parent, parent->id);
+    ev.place = place;
+    y11_event_dispatch32(wm, &ev, sizeof(ev));
+}
+
+/*
+ * CirculateNotify (26): delivered like the other structure notifications
+ * (StructureNotifyMask on the window, SubstructureNotifyMask on the
+ * parent), with the window's new stacking rank in `place` (0 = top,
+ * 1 = bottom).
+ */
+void y11_event_send_circulate_notify(struct y11_window *win, uint8_t place)
+{
+    y11_circulate_event ev;
+
+    if (win->parent == NULL)
+        return;
+    memset(&ev, 0, sizeof(ev));
+    y11_event_set_type(&ev, Y11_EVT_CIRCULATE_NOTIFY);
+    y11_wire_put32(&ev.window, win->id);
+    y11_wire_put32(&ev.parent, win->parent->id);
+    ev.place = place;
+    y11_event_notify_family(win, &ev);
+}
+
 /* ConfigureRequest (23): dispatched ONLY to the parent's redirecting client,
  * carrying the requested geometry (unrequested fields report the window's
  * current values).  Byte 1 carries the stack mode. */

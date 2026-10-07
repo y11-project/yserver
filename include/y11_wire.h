@@ -781,6 +781,15 @@ typedef struct {
 
 typedef struct {
     uint32_t pad00;             /* type, detail, sequence */
+    uint32_t event;             /* bytes 4-7: parent for CirculateRequest */
+    uint32_t window;            /* bytes 8-11 */
+    uint32_t parent;            /* bytes 12-15 */
+    uint8_t  place;              /* byte 16: 0 = Top, 1 = Bottom */
+    uint8_t  pad0[15];
+} y11_circulate_event;          /* 32 bytes: CirculateNotify + CirculateRequest */
+
+typedef struct {
+    uint32_t pad00;             /* type, detail, sequence */
     uint32_t event;             /* bytes 4-7 */
     uint32_t window;            /* bytes 8-11 */
     uint32_t above_sibling;     /* bytes 12-15 */
@@ -889,6 +898,7 @@ typedef char y11_wire_chk_destroy_notify_event[(sizeof(y11_destroy_notify_event)
 typedef char y11_wire_chk_unmap_notify_event[(sizeof(y11_unmap_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_map_notify_event[(sizeof(y11_map_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_map_request_event[(sizeof(y11_map_request_event) == 32) ? 1 : -1];
+typedef char y11_wire_chk_circulate_event[(sizeof(y11_circulate_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_reparent_notify_event[(sizeof(y11_reparent_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_configure_notify_event[(sizeof(y11_configure_notify_event) == 32) ? 1 : -1];
 typedef char y11_wire_chk_configure_request_event[(sizeof(y11_configure_request_event) == 32) ? 1 : -1];

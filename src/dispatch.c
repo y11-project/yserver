@@ -882,6 +882,8 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_window_req_destroy_subwindows(c, pkt, len, data_off);
     case Y11_REQ_REPARENT_WINDOW:
         return y11_window_req_reparent(c, pkt, len, data_off);
+    case Y11_REQ_CIRCULATE_WINDOW:
+        return y11_window_req_circulate(c, pkt, len, data_off);
     case Y11_REQ_MAP_WINDOW:
         return y11_window_req_map(c, pkt, len, data_off);
     case Y11_REQ_MAP_SUBWINDOWS:

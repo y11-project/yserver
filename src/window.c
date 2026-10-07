@@ -948,6 +948,92 @@ int y11_window_req_destroy_subwindows(struct y11_client *c, const uint8_t *pkt,
 }
 
 /*
+ * CirculateWindow (opcode 13): circulate the children of the window:
+ * RaiseLowest raises the lowest mapped child that is occluded by
+ * another child to the top; LowerHighest lowers the highest mapped
+ * child that occludes another child to the bottom.  When the window's
+ * substructure is redirected the window manager decides instead: it
+ * receives a CirculateRequest carrying the child to move.
+ */
+#define Y11_CIRCULATE_IS_MAPPED(w) \
+    ((w)->map_state != Y11_MAP_STATE_UNMAPPED)
+
+/* The extreme mapped child in the stacking order, or NULL. */
+static struct y11_window *y11_circulate_extreme(struct y11_window *parent,
+                                                int lowest)
+{
+    struct y11_window *child = lowest ? parent->first_child :
+                                       parent->last_child;
+
+    while (child != NULL && !Y11_CIRCULATE_IS_MAPPED(child)) {
+        struct y11_window *next = lowest ? child->next_sibling :
+                                          child->prev_sibling;
+
+        child = next;
+    }
+    return child;
+}
+
+/* Does any mapped sibling lie beyond `child` in the stacking order? */
+static int y11_circulate_occluded(struct y11_window *child, int above)
+{
+    struct y11_window *sib = above ? child->next_sibling :
+                                    child->prev_sibling;
+
+    for (; sib != NULL; sib = above ? sib->next_sibling :
+                                     sib->prev_sibling) {
+        if (Y11_CIRCULATE_IS_MAPPED(sib))
+            return 1;
+    }
+    return 0;
+}
+
+int y11_window_req_circulate(struct y11_client *c, const uint8_t *pkt,
+                             size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t window_id;
+    uint8_t direction;
+    struct y11_window *win, *child;
+
+    if (len - data_off != 4u)   /* window */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    window_id = y11_wire_get32(body + 0);
+    direction = pkt[1];         /* RaiseLowest / LowerHighest (header byte) */
+
+    if (direction > 1) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, direction, pkt[0]);
+        return 0;
+    }
+
+    win = y11_window_get(window_id);
+    if (win == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW, window_id, pkt[0]);
+        return 0;
+    }
+
+    /* The extreme mapped child, and whether moving it would matter:
+     * raising is a no-op when nothing occludes the lowest child,
+     * lowering is a no-op when the highest child occludes nothing. */
+    child = y11_circulate_extreme(win, direction == 0);
+    if (child == NULL)
+        return 0;
+    if (!y11_circulate_occluded(child, direction == 0))
+        return 0;
+
+    if (win->substructure_redirect_client != NULL) {
+        /* The window manager decides: hand it the child and place. */
+        y11_event_send_circulate_request(win, child, direction);
+        return 0;
+    }
+
+    y11_window_attach_extreme(child, direction == 0);
+    y11_event_send_circulate_notify(child, direction);
+    return 0;                   /* no reply */
+}
+
+/*
  * ClearArea (opcode 61): paint the region with the window's background
  * pixel.  A zero width or height means "to the window edge"; when
  * exposures is set, the window's ExposureMask subscribers receive

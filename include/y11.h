@@ -81,7 +81,9 @@ enum y11_event_type {
     Y11_EVT_MAP_REQUEST        = 20,
     Y11_EVT_REPARENT_NOTIFY    = 21,
     Y11_EVT_CONFIGURE_NOTIFY   = 22,
-    Y11_EVT_CONFIGURE_REQUEST  = 23
+    Y11_EVT_CONFIGURE_REQUEST  = 23,
+    Y11_EVT_CIRCULATE_NOTIFY   = 26,
+    Y11_EVT_CIRCULATE_REQUEST  = 27
 };
 
 /* ---- event mask bits (numeric values per the X11 wire standard) -------- */
@@ -294,6 +296,7 @@ enum y11_req_opcode {
     Y11_REQ_MAP_SUBWINDOWS           = 9,
     Y11_REQ_UNMAP_WINDOW             = 10,
     Y11_REQ_CONFIGURE_WINDOW         = 12,
+    Y11_REQ_CIRCULATE_WINDOW         = 13,
     Y11_REQ_GET_GEOMETRY             = 14,
     Y11_REQ_QUERY_TREE               = 15,
     Y11_REQ_CHANGE_PROPERTY          = 18,
@@ -602,6 +605,8 @@ int  y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
                                  size_t len, size_t data_off);
 int  y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
                                size_t len, size_t data_off);
+int  y11_window_req_circulate(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
 int  y11_window_req_query_tree(struct y11_client *c, const uint8_t *pkt,
                                size_t len, size_t data_off);
 void y11_window_destroy_owned(struct y11_client *c);
@@ -620,6 +625,10 @@ void y11_event_send_reparent(struct y11_window *win,
 void y11_event_send_configure(struct y11_window *win);
 void y11_event_send_expose(struct y11_window *win);
 void y11_event_send_map_request(struct y11_window *win);
+void y11_event_send_circulate_request(struct y11_window *parent,
+                                      struct y11_window *child,
+                                      uint8_t place);
+void y11_event_send_circulate_notify(struct y11_window *win, uint8_t place);
 void y11_event_send_configure_request(struct y11_window *win,
                                       uint32_t value_mask,
                                       int32_t x, int32_t y,
