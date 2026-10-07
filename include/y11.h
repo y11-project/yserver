@@ -313,6 +313,8 @@ enum y11_req_opcode {
     Y11_REQ_GET_PROPERTY             = 20,
     Y11_REQ_LIST_PROPERTIES          = 21,
     Y11_REQ_SET_SELECTION_OWNER      = 22,
+    Y11_REQ_GET_SELECTION_OWNER      = 23,
+    Y11_REQ_CONVERT_SELECTION        = 24,
     Y11_REQ_SEND_EVENT               = 25,
     Y11_REQ_GRAB_POINTER             = 26,
     Y11_REQ_UNGRAB_POINTER           = 27,
@@ -788,6 +790,17 @@ void y11_font_purge_client(struct y11_client *c);
 void y11_glx_purge_client(struct y11_client *c);
 int  y11_glx_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                 size_t data_off);
+
+/* ---- src/selection.c ---------------------------------------------------------------- */
+
+int  y11_selection_req_set_owner(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off);
+int  y11_selection_req_get_owner(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off);
+int  y11_selection_req_convert(struct y11_client *c, const uint8_t *pkt,
+                               size_t len, size_t data_off);
+void y11_selection_drop_window(yid_t window);
+void y11_selection_purge_client(struct y11_client *c);
 
 /* ---- src/property.c ---------------------------------------------------------------- */
 

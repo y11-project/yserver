@@ -1263,6 +1263,12 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_query_colors(c, pkt, len, data_off);
     case Y11_REQ_LOOKUP_COLOR:
         return y11_dispatch_lookup_color(c, pkt, len, data_off);
+    case Y11_REQ_SET_SELECTION_OWNER:
+        return y11_selection_req_set_owner(c, pkt, len, data_off);
+    case Y11_REQ_GET_SELECTION_OWNER:
+        return y11_selection_req_get_owner(c, pkt, len, data_off);
+    case Y11_REQ_CONVERT_SELECTION:
+        return y11_selection_req_convert(c, pkt, len, data_off);
     case Y11_REQ_LIST_PROPERTIES:
         return y11_property_req_list(c, pkt, len, data_off);
     case Y11_REQ_GET_PROPERTY:
