@@ -167,7 +167,9 @@ enum y11_resource_type {
     Y11_RESOURCE_PIXMAP = 2,
     Y11_RESOURCE_GC     = 3,
     Y11_RESOURCE_SHMSEG = 4,
-    Y11_RESOURCE_COLORMAP = 5
+    Y11_RESOURCE_COLORMAP = 5,
+    Y11_RESOURCE_FONT = 6,
+    Y11_RESOURCE_CURSOR = 7
 };
 
 /* ---- drawables ------------------------------------------------------------ */
@@ -323,6 +325,12 @@ enum y11_req_opcode {
     Y11_REQ_WARP_POINTER            = 41,
     Y11_REQ_TRANSLATE_COORDS       = 40,
     Y11_REQ_GET_FONT_PATH            = 52,
+    Y11_REQ_OPEN_FONT                = 45,
+    Y11_REQ_CLOSE_FONT               = 46,
+    Y11_REQ_QUERY_FONT               = 47,
+    Y11_REQ_CREATE_CURSOR            = 93,
+    Y11_REQ_CREATE_GLYPH_CURSOR      = 94,
+    Y11_REQ_FREE_CURSOR              = 95,
     Y11_REQ_CREATE_PIXMAP            = 53,
     Y11_REQ_FREE_PIXMAP              = 54,
     Y11_REQ_CREATE_GC                = 55,
@@ -770,6 +778,7 @@ void y11_dri3_release_buffer(struct y11_dri3_buffer *buf);
 int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
 
 void y11_colormap_purge_client(struct y11_client *c);
+void y11_font_purge_client(struct y11_client *c);
 
 /* ---- src/property.c ---------------------------------------------------------------- */
 

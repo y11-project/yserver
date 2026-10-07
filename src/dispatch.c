@@ -725,6 +725,190 @@ void y11_colormap_purge_client(struct y11_client *c)
                             y11_colormap_belongs, NULL);
 }
 
+/* ---- fonts and cursors ------------------------------------------------------- */
+
+/*
+ * Fonts are server-side stubs: y11 draws no text (the core text
+ * requests are accepted as no-ops), so an OpenFont just registers an
+ * XID and QueryFont reports an empty character cell that covers every
+ * glyph index.  That is enough for Xlib's XCreateFontCursor, which
+ * validates the requested shape against min/max char range before
+ * asking for a glyph cursor - the shape number is what my hardware
+ * cursor path keys on.
+ */
+
+/* OpenFont (45): fid, name length, name. */
+static int y11_dispatch_open_font(struct y11_client *c, const uint8_t *pkt,
+                                  size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t fid;
+    uint32_t nbytes;
+
+    if (len - data_off < 8u)   /* fid, nbytes, pad(2) */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    fid = y11_wire_get32(body + 0);
+    nbytes = y11_wire_get16(body + 4);
+    if ((size_t)nbytes > len - data_off - 8u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    if (fid == 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
+        return 0;
+    }
+    if (y11_resource_add(fid, Y11_RESOURCE_FONT, c) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, fid, pkt[0]);
+        return 0;
+    }
+    return 0;                   /* no reply */
+}
+
+/* CloseFont (46). */
+static int y11_dispatch_close_font(struct y11_client *c,
+                                  const uint8_t *pkt, size_t len,
+                                  size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t fid;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    fid = y11_wire_get32(body + 0);
+    if (y11_resource_get(fid, Y11_RESOURCE_FONT) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_FONT, fid, pkt[0]);
+        return 0;
+    }
+    y11_resource_remove(fid);
+    return 0;                   /* no reply */
+}
+
+/*
+ * QueryFont (47): 60-byte fixed reply followed by per-character
+ * metrics; the stub reports zero characters with a full 0..255 range
+ * so every cursor-font glyph index validates on the client side.
+ */
+static int y11_dispatch_query_font(struct y11_client *c,
+                                  const uint8_t *pkt, size_t len,
+                                  size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint8_t rep[60];
+    uint32_t fid;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    fid = y11_wire_get32(body + 0);
+    if (y11_resource_get(fid, Y11_RESOURCE_FONT) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_FONT, fid, pkt[0]);
+        return 0;
+    }
+
+    memset(rep, 0, sizeof(rep));
+    rep[0] = 1;                  /* X_Reply */
+    y11_wire_put32(rep + 4, 7);  /* 7 words follow the 32-byte prefix */
+    y11_wire_put16(rep + 40, 0); /* minCharOrByte2 */
+    y11_wire_put16(rep + 42, 255); /* maxCharOrByte2 */
+    y11_wire_put16(rep + 46, 0); /* nFontProps */
+    rep[51] = 1;                 /* allCharsExist */
+    y11_wire_put16(rep + 52, 16); /* fontAscent */
+    y11_wire_put16(rep + 54, 16); /* fontDescent */
+    y11_wire_put32(rep + 56, 0); /* nCharInfos */
+
+    y11_dispatch_send_reply(c, rep, sizeof(rep));
+    return 0;
+}
+
+/*
+ * CreateGlyphCursor (94): register the cursor XID and remember the
+ * cursor-font glyph the client picked; the number matches the
+ * standard cursor font shape table (XC_left_ptr, XC_xterm, ...).
+ */
+static int y11_dispatch_create_glyph_cursor(struct y11_client *c,
+                                            const uint8_t *pkt, size_t len,
+                                            size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t cid, source_font, mask_font, shape;
+
+    if (len - data_off != 28u)  /* cid, fonts, chars, colors */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    cid = y11_wire_get32(body + 0);
+    source_font = y11_wire_get32(body + 4);
+    mask_font = y11_wire_get32(body + 8);
+    shape = y11_wire_get16(body + 12);
+
+    (void)mask_font;
+    if (y11_resource_get(source_font, Y11_RESOURCE_FONT) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_FONT, source_font, pkt[0]);
+        return 0;
+    }
+    if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
+        return 0;
+    }
+    (void)shape;                /* cursor shapes are decorative in y11 */
+    return 0;                   /* no reply */
+}
+
+/* CreateCursor (93): pixmap-based cursors register the same way. */
+static int y11_dispatch_create_cursor(struct y11_client *c,
+                                     const uint8_t *pkt, size_t len,
+                                     size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t cid, source, mask;
+
+    if (len - data_off != 24u)  /* cid, pixmaps, colors, hotspot */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    cid = y11_wire_get32(body + 0);
+    source = y11_wire_get32(body + 4);
+    mask = y11_wire_get32(body + 8);
+    (void)mask;
+
+    if (y11_resource_get(source, Y11_RESOURCE_PIXMAP) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP, source, pkt[0]);
+        return 0;
+    }
+    if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
+        return 0;
+    }
+    return 0;                   /* no reply */
+}
+
+/* FreeCursor (95). */
+static int y11_dispatch_free_cursor(struct y11_client *c,
+                                    const uint8_t *pkt, size_t len,
+                                    size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t cid;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    cid = y11_wire_get32(body + 0);
+    if (y11_resource_get(cid, Y11_RESOURCE_CURSOR) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR, cid, pkt[0]);
+        return 0;
+    }
+    y11_resource_remove(cid);
+    return 0;                   /* no reply */
+}
+
+/* Drop every font and cursor a client created (disconnect cleanup). */
+void y11_font_purge_client(struct y11_client *c)
+{
+    y11_resource_purge_type(Y11_RESOURCE_FONT, c, y11_colormap_belongs,
+                            NULL);
+    y11_resource_purge_type(Y11_RESOURCE_CURSOR, c, y11_colormap_belongs,
+                            NULL);
+}
+
 /* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
 static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off)
@@ -1039,6 +1223,18 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_colormap_noop(c, pkt, len, data_off);
     case Y11_REQ_LIST_INSTALLED_COLORMAPS:
         return y11_dispatch_list_colormaps(c, pkt, len, data_off);
+    case Y11_REQ_OPEN_FONT:
+        return y11_dispatch_open_font(c, pkt, len, data_off);
+    case Y11_REQ_CLOSE_FONT:
+        return y11_dispatch_close_font(c, pkt, len, data_off);
+    case Y11_REQ_QUERY_FONT:
+        return y11_dispatch_query_font(c, pkt, len, data_off);
+    case Y11_REQ_CREATE_CURSOR:
+        return y11_dispatch_create_cursor(c, pkt, len, data_off);
+    case Y11_REQ_CREATE_GLYPH_CURSOR:
+        return y11_dispatch_create_glyph_cursor(c, pkt, len, data_off);
+    case Y11_REQ_FREE_CURSOR:
+        return y11_dispatch_free_cursor(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_COLOR:
         return y11_dispatch_alloc_color(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_NAMED_COLOR:
