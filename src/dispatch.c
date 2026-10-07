@@ -316,7 +316,7 @@ static int y11_dispatch_list_extensions(struct y11_client *c)
 {
     static const char *const names[] = {
         Y11_BIGREQ_NAME, Y11_XTEST_NAME, Y11_SHM_NAME, Y11_DRI3_NAME,
-        Y11_PRESENT_NAME
+        Y11_PRESENT_NAME, Y11_XFIXES_NAME
     };
     y11_list_extensions_reply rep;
     uint8_t data[64];
@@ -399,6 +399,11 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         rep.major_opcode = (uint8_t)Y11_PRESENT_EXT_OPCODE;
         rep.first_event = (uint8_t)Y11_PRESENT_FIRST_EVENT;
         rep.first_error = (uint8_t)Y11_PRESENT_FIRST_ERROR;
+    }
+    if (name_len == (uint16_t)(sizeof(Y11_XFIXES_NAME) - 1) &&
+        memcmp(name, Y11_XFIXES_NAME, name_len) == 0) {
+        rep.present = 1;
+        rep.major_opcode = (uint8_t)Y11_XFIXES_EXT_OPCODE;
     }
 
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
@@ -1350,6 +1355,26 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         /* Present flips and vsync notifications (byte 1). */
         if (opcode == (uint8_t)Y11_PRESENT_EXT_OPCODE)
             return y11_present_req(c, pkt, len, data_off);
+        /* XFIXES: Mesa's DRI3 loader rejects the render fd unless the
+         * server reports XFIXES 2 or newer, so answer with 5.0 (the
+         * version real servers expose; the sync-fence plumbing is
+         * handled through DRI3FenceFromFD instead). */
+        if (opcode == (uint8_t)Y11_XFIXES_EXT_OPCODE) {
+            y11_version_reply vr;
+
+            if (pkt[1] == 0 && len == 12u) {
+                memset(&vr, 0, sizeof(vr));
+                vr.hdr.type = 1;
+                y11_wire_put32(&vr.hdr.length, 0);
+                y11_wire_put32(&vr.major, 5);
+                y11_wire_put32(&vr.minor, 0);
+                y11_dispatch_send_reply(c, &vr, sizeof(vr));
+                return 0;
+            }
+            y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, pkt[1],
+                                    pkt[0]);
+            return 0;
+        }
         y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, 0, opcode);
         return 0;
     }

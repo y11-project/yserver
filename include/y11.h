@@ -60,6 +60,8 @@ typedef uint32_t yid_t;
 #define Y11_PRESENT_EXT_OPCODE 132u      /* major opcode handed out for the extension */
 #define Y11_PRESENT_FIRST_EVENT 65u       /* Configure/Complete/Idle notify */
 #define Y11_PRESENT_FIRST_ERROR 129u      /* Present errors land here */
+#define Y11_XFIXES_NAME       "XFIXES"
+#define Y11_XFIXES_EXT_OPCODE 145u      /* major opcode handed out for the extension */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
