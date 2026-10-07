@@ -1358,7 +1358,9 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
     return 0;                   /* no reply */
 }
 
-/* GetGeometry (opcode 14): a 32-byte reply about a drawable. */
+/* GetGeometry (opcode 14): a 32-byte reply about a drawable.
+ * Windows and pixmaps both answer; pixmaps report root None and a
+ * zero border. */
 int y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
                                 size_t len, size_t data_off)
 {
@@ -1372,7 +1374,23 @@ int y11_window_req_get_geometry(struct y11_client *c, const uint8_t *pkt,
     window_id = y11_wire_get32(body + 0);
     win = y11_window_get(window_id);
     if (win == NULL) {
-        y11_dispatch_send_error(c, Y11_ERR_BAD_DRAWABLE, window_id, pkt[0]);
+        struct y11_pixmap *pix =
+            y11_resource_get(window_id, Y11_RESOURCE_PIXMAP);
+
+        if (pix == NULL) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_DRAWABLE, window_id,
+                                    pkt[0]);
+            return 0;
+        }
+        memset(&rep, 0, sizeof(rep));
+        rep.hdr.type = 1;       /* X_Reply */
+        rep.hdr.pad0 = pix->base.depth;
+        y11_wire_put32(&rep.hdr.length, 0);
+        y11_wire_put32(&rep.root, 0);       /* None for pixmaps */
+        y11_wire_put16(&rep.width, pix->base.width);
+        y11_wire_put16(&rep.height, pix->base.height);
+
+        y11_dispatch_send_reply(c, &rep, sizeof(rep));
         return 0;
     }
 
