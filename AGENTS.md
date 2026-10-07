@@ -69,6 +69,13 @@ rendering clients.
   configs attribute by attribute; the advertised entry must mirror
   what a modern driver reports (no accumulation buffers, bind-to-
   texture on, Y inverted) or every config is dropped as unmatched.
+- libXrender requires the connection setup to advertise depths
+  1/4/8/24/32 before it will even send QueryExtension("RENDER"); it
+  probes missing depths with 1x1 pixmaps and reads the errors.
+- Xft without RENDER falls back to core drawing (client-side blend +
+  PutImage); with RENDER it uploads A8 glyph masks via AddGlyphs and
+  composites with CompositeGlyphs8, whose first element carries the
+  absolute pen position in its deltas.
 - DRI3Open hands clients the render node fd; the server keeps its own
   card fd for Prime imports and the dumb-buffer CPU maps used by the
   Present blit path.
