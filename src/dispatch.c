@@ -609,6 +609,122 @@ static uint32_t y11_color_pixel(uint16_t red, uint16_t green, uint16_t blue)
            (uint32_t)(blue >> 8);
 }
 
+/* ---- colormap lifecycle ------------------------------------------------------ */
+
+/*
+ * TrueColor visuals carry their color maps in the pixel value, so a
+ * colormap needs no palette storage: it is a registered XID that
+ * CreateWindow can reference and clients can allocate colors from.
+ */
+
+static int y11_dispatch_create_colormap(struct y11_client *c,
+                                        const uint8_t *pkt, size_t len,
+                                        size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t mid;
+
+    if (len - data_off != 12u)  /* mid, window, visual */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    mid = y11_wire_get32(body + 0);
+    if (mid == 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
+        return 0;
+    }
+    if (y11_resource_add(mid, Y11_RESOURCE_COLORMAP, c) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, mid, pkt[0]);
+        return 0;
+    }
+    return 0;                   /* no reply */
+}
+
+/* CopyColormapAndFree (79): register the copy, keep the source. */
+static int y11_dispatch_copy_colormap(struct y11_client *c,
+                                      const uint8_t *pkt, size_t len,
+                                      size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t mid, src;
+
+    if (len - data_off != 8u)   /* mid, src-cmap */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    mid = y11_wire_get32(body + 0);
+    src = y11_wire_get32(body + 4);
+    if (y11_resource_get(src, Y11_RESOURCE_COLORMAP) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_COLORMAP, src, pkt[0]);
+        return 0;
+    }
+    if (mid == 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
+        return 0;
+    }
+    if (y11_resource_add(mid, Y11_RESOURCE_COLORMAP, c) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, mid, pkt[0]);
+        return 0;
+    }
+    return 0;                   /* no reply */
+}
+
+/* FreeColormap (80). */
+static int y11_dispatch_free_colormap(struct y11_client *c,
+                                      const uint8_t *pkt, size_t len,
+                                      size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t cmap;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    cmap = y11_wire_get32(body + 0);
+    if (y11_resource_get(cmap, Y11_RESOURCE_COLORMAP) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_COLORMAP, cmap, pkt[0]);
+        return 0;
+    }
+    y11_resource_remove(cmap);
+    return 0;                   /* no reply */
+}
+
+/* InstallColormap (81) / UninstallColormap (82): no palette state. */
+static int y11_dispatch_colormap_noop(struct y11_client *c,
+                                     const uint8_t *pkt, size_t len,
+                                     size_t data_off)
+{
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    return 0;                   /* no reply */
+}
+
+/* ListInstalledColormaps (83): none installed (CARD16 count at byte 8). */
+static int y11_dispatch_list_colormaps(struct y11_client *c,
+                                      const uint8_t *pkt, size_t len,
+                                      size_t data_off)
+{
+    uint8_t rep[32];
+
+    if (len - data_off != 4u)   /* window */
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    memset(rep, 0, sizeof(rep));
+    rep[0] = 1;                 /* X_Reply */
+    y11_dispatch_send_reply(c, rep, sizeof(rep));
+    return 0;
+}
+
+/* Drop every colormap a client created (disconnect cleanup). */
+static int y11_colormap_belongs(void *ptr, struct y11_client *c)
+{
+    return ptr == c;
+}
+
+void y11_colormap_purge_client(struct y11_client *c)
+{
+    y11_resource_purge_type(Y11_RESOURCE_COLORMAP, c,
+                            y11_colormap_belongs, NULL);
+}
+
 /* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
 static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off)
@@ -912,6 +1028,17 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_list_extensions(c);
     case Y11_REQ_QUERY_BEST_SIZE:
         return y11_dispatch_query_best_size(c, pkt, len, data_off);
+    case Y11_REQ_CREATE_COLORMAP:
+        return y11_dispatch_create_colormap(c, pkt, len, data_off);
+    case Y11_REQ_COPY_COLORMAP_AND_FREE:
+        return y11_dispatch_copy_colormap(c, pkt, len, data_off);
+    case Y11_REQ_FREE_COLORMAP:
+        return y11_dispatch_free_colormap(c, pkt, len, data_off);
+    case Y11_REQ_INSTALL_COLORMAP:
+    case Y11_REQ_UNINSTALL_COLORMAP:
+        return y11_dispatch_colormap_noop(c, pkt, len, data_off);
+    case Y11_REQ_LIST_INSTALLED_COLORMAPS:
+        return y11_dispatch_list_colormaps(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_COLOR:
         return y11_dispatch_alloc_color(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_NAMED_COLOR:

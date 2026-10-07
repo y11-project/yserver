@@ -166,7 +166,8 @@ enum y11_resource_type {
     Y11_RESOURCE_WINDOW = 1,
     Y11_RESOURCE_PIXMAP = 2,
     Y11_RESOURCE_GC     = 3,
-    Y11_RESOURCE_SHMSEG = 4
+    Y11_RESOURCE_SHMSEG = 4,
+    Y11_RESOURCE_COLORMAP = 5
 };
 
 /* ---- drawables ------------------------------------------------------------ */
@@ -343,6 +344,12 @@ enum y11_req_opcode {
     Y11_REQ_STORE_COLORS             = 89,
     Y11_REQ_STORE_NAMED_COLOR        = 90,
     Y11_REQ_QUERY_COLORS             = 91,
+    Y11_REQ_CREATE_COLORMAP           = 78,
+    Y11_REQ_COPY_COLORMAP_AND_FREE    = 79,
+    Y11_REQ_FREE_COLORMAP            = 80,
+    Y11_REQ_INSTALL_COLORMAP          = 81,
+    Y11_REQ_UNINSTALL_COLORMAP        = 82,
+    Y11_REQ_LIST_INSTALLED_COLORMAPS  = 83,
     Y11_REQ_LOOKUP_COLOR             = 92,
     Y11_REQ_CHANGE_KEYBOARD_MAPPING    = 100,
     Y11_REQ_GET_KEYBOARD_CONTROL     = 103,
@@ -761,6 +768,8 @@ int  y11_dri3_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                   size_t data_off);
 void y11_dri3_release_buffer(struct y11_dri3_buffer *buf);
 int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
+
+void y11_colormap_purge_client(struct y11_client *c);
 
 /* ---- src/property.c ---------------------------------------------------------------- */
 
