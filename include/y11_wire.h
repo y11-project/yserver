@@ -583,6 +583,13 @@ typedef struct {
 } y11_version_reply;             /* 32: DRI3QueryVersion, PresentQueryVersion */
 
 typedef struct {
+    y11_reply_hdr hdr;          /* GLX configs reply */
+    uint32_t num_visuals;      /* bytes 8-11 (CARD32) */
+    uint32_t num_props;         /* bytes 12-15 (CARD32) */
+    uint32_t pad0[4];
+} y11_glx_configs_reply;        /* 32: GetVisualConfigs, GetFBConfigs */
+
+typedef struct {
     y11_reply_hdr hdr;          /* hdr.pad0 = nfd (1) */
     uint32_t size;              /* bytes 8-11 */
     uint16_t width;             /* bytes 12-13 */
@@ -920,6 +927,7 @@ typedef char y11_wire_chk_get_image_req[(sizeof(y11_get_image_req) == 20) ? 1 : 
 typedef char y11_wire_chk_get_image_reply[(sizeof(y11_get_image_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_shm_query_version_reply[(sizeof(y11_shm_query_version_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_version_reply[(sizeof(y11_version_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_glx_configs_reply[(sizeof(y11_glx_configs_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_dri3_buffer_reply[(sizeof(y11_dri3_buffer_reply) == 32) ? 1 : -1];
 typedef char y11_wire_chk_shm_attach_req[(sizeof(y11_shm_attach_req) == 16) ? 1 : -1];
 typedef char y11_wire_chk_shm_detach_req[(sizeof(y11_shm_detach_req) == 8) ? 1 : -1];

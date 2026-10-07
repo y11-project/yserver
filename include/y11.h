@@ -62,6 +62,8 @@ typedef uint32_t yid_t;
 #define Y11_PRESENT_FIRST_ERROR 129u      /* Present errors land here */
 #define Y11_XFIXES_NAME       "XFIXES"
 #define Y11_XFIXES_EXT_OPCODE 145u      /* major opcode handed out for the extension */
+#define Y11_GLX_NAME          "GLX"
+#define Y11_GLX_EXT_OPCODE    143u      /* major opcode handed out for the extension */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -781,6 +783,9 @@ int  y11_dri3_pixmap_cpu_map(struct y11_pixmap *p);
 
 void y11_colormap_purge_client(struct y11_client *c);
 void y11_font_purge_client(struct y11_client *c);
+void y11_glx_purge_client(struct y11_client *c);
+int  y11_glx_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                size_t data_off);
 
 /* ---- src/property.c ---------------------------------------------------------------- */
 

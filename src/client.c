@@ -70,7 +70,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     y11_colormap_purge_client(c);
     /* And its fonts and cursors. */
     y11_font_purge_client(c);
-    /* And its input grabs. */
+    /* And its GLX contexts and input grabs. */
+    y11_glx_purge_client(c);
     y11_grab_purge_client(c);
     /* And its Present event selections. */
     y11_present_purge_client(c);
