@@ -882,11 +882,13 @@ static int y11_render_composite_glyphs(struct y11_client *c,
             if (gs == NULL)
                 continue;
             g = y11_render_glyph_find(gs, gid);
-            if (g == NULL || g->bits == NULL)
+            if (g == NULL)
                 continue;
-            px = pen_x - g->x;
-            py = pen_y - g->y;
-            y11_render_glyph_composite(src, dst, g, px, py, op);
+            if (g->bits != NULL) {
+                px = pen_x - g->x;
+                py = pen_y - g->y;
+                y11_render_glyph_composite(src, dst, g, px, py, op);
+            }
             pen_x += g->x_off;
             pen_y += g->y_off;
         }

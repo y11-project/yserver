@@ -367,7 +367,7 @@ static int y11_client_send_setup_success(struct y11_client *c)
 {
     y11_conn_setup_prefix prefix;
     y11_conn_setup_info info;
-    y11_pixmap_format formats[3];
+    y11_pixmap_format formats[5];
     y11_screen_info screen;
     y11_visual_type visual;
     static const char vendor[] = Y11_VENDOR_STRING;
@@ -398,7 +398,7 @@ static int y11_client_send_setup_success(struct y11_client *c)
     y11_wire_put16(&info.vendor_len, (uint16_t)vlen);
     y11_wire_put16(&info.max_request_size, (uint16_t)Y11_MAX_REQUEST_UNITS);
     info.num_screens = 1;
-    info.num_formats = 3;
+    info.num_formats = 5;
     info.image_byte_order = 0;          /* LSBFirst */
     info.bitmap_bit_order = 0;          /* Least Significant first */
     info.bitmap_scanline_unit = 32;
@@ -406,17 +406,23 @@ static int y11_client_send_setup_success(struct y11_client *c)
     info.min_keycode = 8;
     info.max_keycode = 255;
 
-    /* 16-byte format list */
+    /* 40-byte format list (5 entries * 8 bytes) */
     memset(formats, 0, sizeof(formats));
     formats[0].depth = 1;
     formats[0].bits_per_pixel = 1;
     formats[0].scanline_pad = 32;
-    formats[1].depth = 24;
-    formats[1].bits_per_pixel = 32;
+    formats[1].depth = 4;
+    formats[1].bits_per_pixel = 8;
     formats[1].scanline_pad = 32;
-    formats[2].depth = 32;
-    formats[2].bits_per_pixel = 32;
+    formats[2].depth = 8;
+    formats[2].bits_per_pixel = 8;
     formats[2].scanline_pad = 32;
+    formats[3].depth = 24;
+    formats[3].bits_per_pixel = 32;
+    formats[3].scanline_pad = 32;
+    formats[4].depth = 32;
+    formats[4].bits_per_pixel = 32;
+    formats[4].scanline_pad = 32;
 
     /* 40-byte screen information */
     memset(&screen, 0, sizeof(screen));
