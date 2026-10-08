@@ -120,7 +120,8 @@ void y11_resource_purge_type_arg(int type, void *arg,
 
             if (r->type == type && belongs(r->ptr, arg)) {
                 *link = next;
-                destroy(r->ptr);
+                if (destroy != NULL)
+                    destroy(r->ptr);
                 free(r);
             } else {
                 link = &r->next;

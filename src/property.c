@@ -375,7 +375,7 @@ int y11_property_req_list(struct y11_client *c, const uint8_t *pkt,
 
         memset(&rep, 0, sizeof(rep));
         rep.hdr.type = 1;
-        rep.hdr.pad0 = (uint8_t)count;
+        y11_wire_put16(&rep.n_properties, (uint16_t)count);
         y11_wire_put32(&rep.hdr.length, count);
         y11_dispatch_send_reply(c, &rep, sizeof(rep));
         if (tail != NULL) {
