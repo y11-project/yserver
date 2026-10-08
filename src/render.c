@@ -397,9 +397,19 @@ int y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
     left_pad = body[16];
     depth = body[17];
 
-    if (width == 0 || height == 0 || depth != d->depth) {
-        y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, depth, pkt[0]);
+    if (width == 0 || height == 0)
         return 0;
+
+    if (format == 0) {
+        if (depth != 1) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, depth, pkt[0]);
+            return 0;
+        }
+    } else {
+        if (depth != d->depth) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, depth, pkt[0]);
+            return 0;
+        }
     }
 
     if (format == 2 && depth >= 24) {
@@ -457,10 +467,16 @@ int y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
             }
             for (col = 0; col < width; col++) {
                 int32_t dx_ = (int32_t)dst_x + (int32_t)col;
+                uint32_t pix;
 
                 if (dx_ < 0 || dx_ >= (int32_t)d->width)
                     continue;
-                y11_render_pixel(d, gc, (size_t)dx_, (size_t)dy_, acc[col]);
+                if (format == 0 && d->depth > 1) {
+                    pix = (acc[col] & 1u) ? gc->foreground : gc->background;
+                } else {
+                    pix = acc[col];
+                }
+                y11_render_pixel(d, gc, (size_t)dx_, (size_t)dy_, pix);
             }
         }
         free(acc);

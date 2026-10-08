@@ -250,25 +250,37 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_GCONTEXT, gc_id, pkt[0]);
         return 0;
     }
-    if (d->pixels == NULL || depth != d->depth || format != 2) {
-        /* only ZPixmap at the drawable's depth is supported */
+    if (d->pixels == NULL) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, drawable_id, pkt[0]);
         return 0;
+    }
+    if (format == 0) {
+        if (depth != 1) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, drawable_id, pkt[0]);
+            return 0;
+        }
+    } else {
+        if (depth != d->depth) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, drawable_id, pkt[0]);
+            return 0;
+        }
     }
     /* A read-only mapping is fine here: the server only reads the
      * client's pixels. */
 
     /* Bounds check: the last blitted byte must be inside the segment. */
-    stride = (uint64_t)total_width * 4u;
-    if (src_x + src_width > total_width || src_y + src_height >
-        (uint16_t)(seg->size / (stride > 0 ? stride : 1))) {
-        y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR, shmseg_id,
-                                pkt[0]);       /* BadShmSeg */
-        return 0;
+    if (depth == 1) {
+        stride = ((uint64_t)total_width + 31u) / 32u * 4u;
+        need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
+               ((uint64_t)(src_x + src_width + 7u) / 8u);
+    } else {
+        stride = (uint64_t)total_width * 4u;
+        need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
+               (uint64_t)(src_x + src_width) * 4u;
     }
-    need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
-            (uint64_t)(src_x + src_width) * 4u;
-    if (need > (uint64_t)seg->size) {
+    if (src_x + src_width > total_width ||
+        (stride > 0 && (uint64_t)(src_y + src_height) > seg->size / stride) ||
+        need > (uint64_t)seg->size) {
         y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR, shmseg_id,
                                 pkt[0]);       /* BadShmSeg */
         return 0;
@@ -303,8 +315,28 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
             return 0;
         }
 
-        /* GXcopy with a full plane mask is a row memcpy. */
-        if (gc->function == 3 && gc->plane_mask == 0xFFFFFFFFu) {
+        if (depth == 1) {
+            uint32_t col;
+
+            for (row = 0; row < (int32_t)(h - skip_top); row++) {
+                const uint8_t *row_bytes = src +
+                    (size_t)(src_y + skip_top + row) * (size_t)stride;
+
+                for (col = 0; col < w - skip_left; col++) {
+                    size_t bit = (size_t)(src_x + skip_left + col);
+                    uint32_t val = (row_bytes[bit / 8u] >> (bit % 8u)) & 1u;
+                    uint32_t pix;
+
+                    if (format == 0 && d->depth > 1)
+                        pix = val ? gc->foreground : gc->background;
+                    else
+                        pix = val;
+                    y11_render_pixel_ex(d, gc, (size_t)(sx + col),
+                                        (size_t)(sy + row), pix);
+                }
+            }
+        } else if (gc->function == 3 && gc->plane_mask == 0xFFFFFFFFu) {
+            /* GXcopy with a full plane mask is a row memcpy. */
             for (row = 0; row < (int32_t)(h - skip_top); row++) {
                 const uint8_t *s = src +
                     (size_t)(src_y + skip_top + row) * stride +
@@ -511,7 +543,12 @@ static int y11_shm_create_pixmap(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
-    need = offset + (uint64_t)width * (uint64_t)height * 4u;
+    if (depth == 1) {
+        size_t bpr = ((size_t)width + 31u) / 32u * 4u;
+        need = offset + (uint64_t)height * (uint64_t)bpr;
+    } else {
+        need = offset + (uint64_t)width * (uint64_t)height * 4u;
+    }
     if (need > (uint64_t)seg->size) {
         y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR, shmseg_id,
                                 pkt[0]);       /* BadShmSeg */
@@ -528,8 +565,9 @@ static int y11_shm_create_pixmap(struct y11_client *c, const uint8_t *pkt,
     p->base.width = width;
     p->base.height = height;
     p->base.depth = depth;
-    p->base.bpp = 32;
-    p->base.stride = (size_t)width * 4u;
+    p->base.bpp = depth == 1 ? 1 : 32;
+    p->base.stride = depth == 1 ? (((size_t)width + 31u) / 32u * 4u)
+                                : ((size_t)width * 4u);
     p->base.pixels = (uint32_t *)((uint8_t *)seg->addr + offset);
     p->owner = c;
     p->is_shm = true;
