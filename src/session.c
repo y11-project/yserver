@@ -119,11 +119,7 @@ static int y11_session_direct(struct y11_session *s)
         "/dev/dri/card0", "/dev/dri/card1", "/dev/dri/card2", NULL
     };
     struct vt_mode vtm;
-    int i, fd = -1, tty_fd;
-
-    tty_fd = open("/dev/tty", O_RDWR);
-    if (tty_fd < 0)
-        return -1;              /* no controlling terminal */
+    int i, fd = -1;
 
     for (i = 0; paths[i] != NULL; i++) {
         fd = open(paths[i], O_RDWR | O_CLOEXEC);
@@ -137,23 +133,20 @@ static int y11_session_direct(struct y11_session *s)
         close(fd);
         fd = -1;
     }
-    if (fd < 0) {
-        close(tty_fd);
+    if (fd < 0)
         return -1;
-    }
 
     s->drm_card_fd = fd;
     s->drm_device_id = -1;      /* no libseat device */
-    s->tty_fd = tty_fd;
     s->active = true;
-    y11_drm_set_tty(tty_fd);
+    y11_drm_set_tty(s->tty_fd);
 
     /* Own the VT switches; the kernel signals us to release/accept. */
     memset(&vtm, 0, sizeof(vtm));
     vtm.mode = VT_PROCESS;
     vtm.relsig = SIGUSR1;
     vtm.acqsig = SIGUSR2;
-    (void)ioctl(tty_fd, VT_SETMODE, &vtm);
+    (void)ioctl(s->tty_fd, VT_SETMODE, &vtm);
     (void)signal(SIGUSR1, y11_vt_signal);
     (void)signal(SIGUSR2, y11_vt_signal);
     return fd;
@@ -164,7 +157,24 @@ int y11_session_init(struct y11_session *s)
     memset(s, 0, sizeof(*s));
     s->drm_card_fd = -1;
     s->drm_device_id = -1;
-    s->tty_fd = -1;
+    s->tty_fd = open("/dev/tty", O_RDWR);
+
+    /*
+     * A display needs VT coordination: without a controlling terminal
+     * (daemons, remote shells) there is no way to hand the screen
+     * back on a VT switch, which would trap whoever sits in front of
+     * it.  Refuse instead.
+     */
+    if (s->tty_fd < 0) {
+        s->seat = libseat_open_seat(&y11_seat_listener, s);
+        if (s->seat != NULL) {
+            libseat_close_seat(s->seat);
+            s->seat = NULL;
+        }
+        fprintf(stderr, "y11: no controlling terminal, refusing the"
+                " display (run from a TTY session)\n");
+        return -1;
+    }
 
     s->seat = libseat_open_seat(&y11_seat_listener, s);
     if (s->seat == NULL) {
