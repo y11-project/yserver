@@ -843,10 +843,23 @@ static int y11_render_composite_glyphs(struct y11_client *c,
         deltax = (int16_t)y11_wire_get16(body + off + 4);
         deltay = (int16_t)y11_wire_get16(body + off + 6);
 
+        if (elt_len == 0xff) {
+            /* GlyphSet switch element: new glyphset ID follows. */
+            if (len - data_off - off < 12u)
+                break;
+            gsid = y11_wire_get32(body + off + 8u);
+            gs = y11_render_glyphset_find(gsid);
+            off += 12u;
+            continue;
+        }
+
         if (first_elt) {
-            pen_x = deltax;     /* absolute start position */
+            pen_x = deltax;     /* initial pen position */
             pen_y = deltay;
             first_elt = 0;
+        } else {
+            pen_x += deltax;
+            pen_y += deltay;
         }
 
         off += 8u;
@@ -866,6 +879,8 @@ static int y11_render_composite_glyphs(struct y11_client *c,
             }
             off += (size_t)chars_per;
 
+            if (gs == NULL)
+                continue;
             g = y11_render_glyph_find(gs, gid);
             if (g == NULL || g->bits == NULL)
                 continue;
