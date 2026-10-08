@@ -540,6 +540,18 @@ int main(int argc, char **argv)
             (void)signal(SIGPIPE, SIG_DFL);
 
             execvp(argv[client_arg_idx], &argv[client_arg_idx]);
+            if (errno == ENOENT && strchr(argv[client_arg_idx], '/') == NULL) {
+                const char *home = getenv("HOME");
+                if (home != NULL) {
+                    char local_path[1024];
+                    if (snprintf(local_path, sizeof(local_path), "%s/.local/bin/%s",
+                                 home, argv[client_arg_idx]) < (int)sizeof(local_path) &&
+                        access(local_path, X_OK) == 0) {
+                        argv[client_arg_idx] = local_path;
+                        execv(local_path, &argv[client_arg_idx]);
+                    }
+                }
+            }
             fprintf(stderr, "y11: execvp \"%s\" failed: %s\n",
                     argv[client_arg_idx], strerror(errno));
             _exit(127);
