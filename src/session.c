@@ -9,8 +9,10 @@
  * output is re-modeset and the screen is redrawn.
  *
  * When the seat is unavailable - no seat manager, or another display
- * server already owns the session - this fails cleanly and y11 runs
- * headless over its UNIX sockets.
+ * server already owns the session - this falls back to taking DRM
+ * master directly on an idle console (the kernel allows it when no
+ * other master exists); if that also fails, y11 runs headless over
+ * its UNIX sockets and never disturbs a running session.
  */
 
 #include <errno.h>
@@ -18,6 +20,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <sys/ioctl.h>
+#include <drm/drm.h>
 
 #include "y11_drm.h"
 
@@ -79,6 +84,39 @@ static int y11_session_open_card(struct y11_session *s, int *dev_id)
     return -1;
 }
 
+/*
+ * Direct fallback: no seat manager is running (no seatd socket, no
+ * logind).  On an idle console the kernel lets any process on the
+ * primary node take DRM master, so try the card nodes directly.  If
+ * another display server holds master the set-master ioctl fails and
+ * y11 stays headless - a running session is never disturbed.
+ */
+static int y11_session_direct(struct y11_session *s)
+{
+    static const char *const paths[] = {
+        "/dev/dri/card0", "/dev/dri/card1", "/dev/dri/card2", NULL
+    };
+    int i;
+
+    for (i = 0; paths[i] != NULL; i++) {
+        int fd = open(paths[i], O_RDWR | O_CLOEXEC);
+
+        if (fd < 0)
+            continue;
+        if (ioctl(fd, DRM_IOCTL_SET_MASTER, 0) == 0) {
+            s->drm_card_fd = fd;
+            s->drm_device_id = -1;      /* no libseat device */
+            s->active = true;
+            return fd;
+        }
+        if (y11_debug)
+            fprintf(stderr, "y11: direct %s: %s\n", paths[i],
+                    strerror(errno));
+        close(fd);
+    }
+    return -1;
+}
+
 int y11_session_init(struct y11_session *s)
 {
     memset(s, 0, sizeof(*s));
@@ -87,6 +125,11 @@ int y11_session_init(struct y11_session *s)
 
     s->seat = libseat_open_seat(&y11_seat_listener, s);
     if (s->seat == NULL) {
+        if (y11_session_direct(s) >= 0) {
+            fprintf(stderr, "y11: no seat manager; took DRM master"
+                    " on the console directly\n");
+            return 0;
+        }
         fprintf(stderr, "y11: no seat available (%s), running headless\n",
                 strerror(errno));
         return -1;

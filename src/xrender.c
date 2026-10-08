@@ -901,7 +901,9 @@ static int y11_render_trapezoids(struct y11_client *c, const uint8_t *pkt,
     uint32_t color;
     size_t ntraps, i;
 
-    if (len - data_off < 24u || ((len - data_off - 24u) % 40u) != 0u)
+    /* The 24-byte fixed part includes the 4-byte request header, so
+     * the trap list starts 20 bytes into the body. */
+    if (len - data_off < 20u || ((len - data_off - 20u) % 40u) != 0u)
         return y11_dispatch_bad_length(c, pkt[0]);
 
     op = body[0];
@@ -923,9 +925,9 @@ static int y11_render_trapezoids(struct y11_client *c, const uint8_t *pkt,
     else
         color = src->color & 0xffffffu;
 
-    ntraps = (len - data_off - 24u) / 40u;
+    ntraps = (len - data_off - 20u) / 40u;
     for (i = 0; i < ntraps; i++) {
-        const uint8_t *t = body + 24u + i * 40u;
+        const uint8_t *t = body + 20u + i * 40u;
         int32_t top = (int32_t)y11_wire_get32(t + 0);       /* 16.16 */
         int32_t bottom = (int32_t)y11_wire_get32(t + 4);
         int32_t lx1 = (int32_t)y11_wire_get32(t + 8);       /* left.p1.x */
