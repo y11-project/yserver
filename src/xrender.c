@@ -1041,10 +1041,34 @@ int y11_render_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_RENDER_SET_PICTURE_CLIP_RECTANGLES:
     case Y11_RENDER_FREE_GLYPHS:
     case Y11_RENDER_COMPOSITE:
+        return 0;
     case 27: {                  /* RenderCreateCursor: cid, src, x, y */
         uint32_t cid;
 
         if (len - data_off < 8u)
+            return y11_dispatch_bad_length(c, pkt[0]);
+        cid = y11_wire_get32(pkt + data_off);
+        if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
+            return 0;
+        }
+        return 0;               /* accepted, no reply */
+    }
+    case 28:                    /* RenderSetPictureTransform */
+    case 30:                    /* RenderSetPictureFilter */
+        return 0;
+    case 29: {                  /* RenderQueryFilters */
+        uint8_t rep[32];
+
+        memset(rep, 0, sizeof(rep));
+        rep[0] = 1;             /* reply */
+        y11_dispatch_send_reply(c, rep, sizeof(rep));
+        return 0;
+    }
+    case 31: {                  /* RenderCreateAnimCursor: cid, elements */
+        uint32_t cid;
+
+        if (len - data_off < 4u)
             return y11_dispatch_bad_length(c, pkt[0]);
         cid = y11_wire_get32(pkt + data_off);
         if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
