@@ -51,6 +51,10 @@ typedef struct y11_output {
     y11_drm_fb_t buffers[2];    /* double buffer: 0 and 1 */
     uint8_t back_buffer;        /* index currently being drawn into */
     bool pflip_pending;         /* waiting for the VBlank flip event */
+    bool console_saved;         /* console CRTC state captured */
+    uint32_t console_fb;        /* framebuffer the console was scanning out */
+    uint32_t console_x, console_y;
+    drmModeModeInfo console_mode;
     struct y11_output *next;
 } y11_output_t;
 
@@ -76,6 +80,7 @@ void y11_session_dispatch(struct y11_session *s);
 int              y11_drm_init(struct y11_session *s);
 void             y11_drm_shutdown(void);
 struct y11_output *y11_drm_outputs(void);
+void             y11_drm_restore_console(void);
 int              y11_drm_mode_set_all(void);
 int              y11_drm_page_flip(struct y11_output *out);
 

@@ -335,5 +335,7 @@ void y11_scanout_shutdown(void)
         (void)drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &d);
         y11_cursor_handle = 0;
     }
+    /* Hand the CRTCs back to the console before the buffers die. */
+    y11_drm_restore_console();
     y11_scanout_root = NULL;
 }

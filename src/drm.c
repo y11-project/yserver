@@ -256,17 +256,59 @@ int y11_drm_mode_set_all(void)
 
     for (out = y11_output_list; out != NULL; out = out->next) {
         uint8_t front = (uint8_t)(out->back_buffer ^ 1);
-        int r = drmModeSetCrtc(out->drm_fd, out->crtc_id,
-                               out->buffers[front].fb_id, 0, 0,
-                               &out->connector_id, 1, &out->mode);
 
-        if (r != 0) {
-            fprintf(stderr, "y11: drmModeSetCrtc(%u): %s\n", out->crtc_id,
-                    strerror(errno));
-            return -1;
+        /*
+         * Capture the console's CRTC state the first time this CRTC
+         * is programmed: on shutdown the original framebuffer is set
+         * back so the text console keeps working after y11 exits.
+         */
+        if (!out->console_saved) {
+            drmModeCrtcPtr crtc = drmModeGetCrtc(out->drm_fd,
+                                                 out->crtc_id);
+
+            if (crtc != NULL) {
+                if (crtc->buffer_id != 0 && crtc->mode_valid) {
+                    out->console_saved = true;
+                    out->console_fb = crtc->buffer_id;
+                    out->console_x = crtc->x;
+                    out->console_y = crtc->y;
+                    out->console_mode = crtc->mode;
+                }
+                drmModeFreeCrtc(crtc);
+            }
+        }
+
+        {
+            int r = drmModeSetCrtc(out->drm_fd, out->crtc_id,
+                                   out->buffers[front].fb_id, 0, 0,
+                                   &out->connector_id, 1, &out->mode);
+
+            if (r != 0) {
+                fprintf(stderr, "y11: drmModeSetCrtc(%u): %s\n",
+                        out->crtc_id, strerror(errno));
+                return -1;
+            }
         }
     }
     return 0;
+}
+
+/*
+ * Hand every CRTC back to the console it displaced, restoring the
+ * framebuffer and mode captured at modeset time.
+ */
+void y11_drm_restore_console(void)
+{
+    struct y11_output *out;
+
+    for (out = y11_output_list; out != NULL; out = out->next) {
+        if (!out->console_saved)
+            continue;
+        (void)drmModeSetCrtc(out->drm_fd, out->crtc_id, out->console_fb,
+                             out->console_x, out->console_y,
+                             &out->connector_id, 1, &out->console_mode);
+        out->console_saved = false;
+    }
 }
 
 /*
