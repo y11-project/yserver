@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <sys/ioctl.h>
+#include <sys/vt.h>
 #include <drm/drm.h>
 
 #include "y11_drm.h"
@@ -262,6 +263,12 @@ int y11_drm_init(struct y11_session *s)
  * the card fd, which still holds DRM master.
  */
 static int y11_drm_watchdog_fd = -1;
+static int y11_drm_tty_fd = -1;
+
+void y11_drm_set_tty(int fd)
+{
+    y11_drm_tty_fd = fd;
+}
 
 static void y11_drm_spawn_watchdog(struct y11_output *out)
 {
@@ -282,10 +289,10 @@ static void y11_drm_spawn_watchdog(struct y11_output *out)
 
         close(fds[1]);
         (void)setsid();
-        /* Keep only the pipe and the card fd; everything else (the
-         * listening sockets included) must die with the server. */
+        /* Keep only the pipe, the card fd and the tty fd; everything
+         * else (the listening sockets included) dies with the server. */
         for (i = 3; i < 1024; i++) {
-            if (i == fds[0] || i == out->drm_fd)
+            if (i == fds[0] || i == out->drm_fd || i == y11_drm_tty_fd)
                 continue;
             (void)close(i);
         }
@@ -297,6 +304,14 @@ static void y11_drm_spawn_watchdog(struct y11_output *out)
                                  out->console_fb, out->console_x,
                                  out->console_y, &out->connector_id, 1,
                                  &out->console_mode);
+        }
+        /* Give the VT back to the kernel. */
+        if (y11_drm_tty_fd >= 0) {
+            struct vt_mode vtm;
+
+            memset(&vtm, 0, sizeof(vtm));
+            vtm.mode = VT_AUTO;
+            (void)ioctl(y11_drm_tty_fd, VT_SETMODE, &vtm);
         }
         (void)ioctl(out->drm_fd, DRM_IOCTL_DROP_MASTER, 0);
         _exit(0);

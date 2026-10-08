@@ -17,14 +17,31 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <sys/ioctl.h>
+#include <sys/vt.h>
 #include <drm/drm.h>
 
 #include "y11_drm.h"
+
+/*
+ * VT switch flags, set from the signal handlers and consumed in the
+ * dispatch loop (async-signal-safe: handlers only set flags).
+ */
+static volatile sig_atomic_t y11_vt_switch_away;
+static volatile sig_atomic_t y11_vt_switch_back;
+
+static void y11_vt_signal(int sig)
+{
+    if (sig == SIGUSR1)
+        y11_vt_switch_away = 1;
+    else if (sig == SIGUSR2)
+        y11_vt_switch_back = 1;
+}
 
 static void y11_session_enable(struct libseat *seat, void *userdata)
 {
@@ -86,35 +103,57 @@ static int y11_session_open_card(struct y11_session *s, int *dev_id)
 
 /*
  * Direct fallback: no seat manager is running (no seatd socket, no
- * logind).  On an idle console the kernel lets any process on the
- * primary node take DRM master, so try the card nodes directly.  If
- * another display server holds master the set-master ioctl fails and
- * y11 stays headless - a running session is never disturbed.
+ * logind).  This path REQUIRES a controlling terminal: the tty is
+ * put in VT_PROCESS mode so y11 owns VT switching - master drops on
+ * switch-away and comes back on switch-back, which keeps the console
+ * usable at all times.  Without a controlling terminal (daemons,
+ * remote shells) the path refuses: holding the display with no way
+ * to release it would trap whoever is in front of the screen.
  */
 static int y11_session_direct(struct y11_session *s)
 {
     static const char *const paths[] = {
         "/dev/dri/card0", "/dev/dri/card1", "/dev/dri/card2", NULL
     };
-    int i;
+    struct vt_mode vtm;
+    int i, fd = -1, tty_fd;
+
+    tty_fd = open("/dev/tty", O_RDWR);
+    if (tty_fd < 0)
+        return -1;              /* no controlling terminal */
 
     for (i = 0; paths[i] != NULL; i++) {
-        int fd = open(paths[i], O_RDWR | O_CLOEXEC);
-
+        fd = open(paths[i], O_RDWR | O_CLOEXEC);
         if (fd < 0)
             continue;
-        if (ioctl(fd, DRM_IOCTL_SET_MASTER, 0) == 0) {
-            s->drm_card_fd = fd;
-            s->drm_device_id = -1;      /* no libseat device */
-            s->active = true;
-            return fd;
-        }
+        if (ioctl(fd, DRM_IOCTL_SET_MASTER, 0) == 0)
+            break;
         if (y11_debug)
             fprintf(stderr, "y11: direct %s: %s\n", paths[i],
                     strerror(errno));
         close(fd);
+        fd = -1;
     }
-    return -1;
+    if (fd < 0) {
+        close(tty_fd);
+        return -1;
+    }
+
+    s->drm_card_fd = fd;
+    s->drm_device_id = -1;      /* no libseat device */
+    s->tty_fd = tty_fd;
+    s->active = true;
+    y11_drm_set_tty(tty_fd);
+
+    /* Own the VT switches; the kernel signals us to release/accept. */
+    memset(&vtm, 0, sizeof(vtm));
+    vtm.mode = VT_PROCESS;
+    vtm.relsig = SIGUSR1;
+    vtm.acqsig = SIGUSR2;
+    (void)ioctl(tty_fd, VT_SETMODE, &vtm);
+    (void)signal(SIGUSR1, y11_vt_signal);
+    (void)signal(SIGUSR2, y11_vt_signal);
+    return fd;
 }
 
 int y11_session_init(struct y11_session *s)
@@ -122,12 +161,13 @@ int y11_session_init(struct y11_session *s)
     memset(s, 0, sizeof(*s));
     s->drm_card_fd = -1;
     s->drm_device_id = -1;
+    s->tty_fd = -1;
 
     s->seat = libseat_open_seat(&y11_seat_listener, s);
     if (s->seat == NULL) {
         if (y11_session_direct(s) >= 0) {
-            fprintf(stderr, "y11: no seat manager; took DRM master"
-                    " on the console directly\n");
+            fprintf(stderr, "y11: no seat manager; took the console"
+                    " with VT_PROCESS switching\n");
             return 0;
         }
         fprintf(stderr, "y11: no seat available (%s), running headless\n",
@@ -156,12 +196,50 @@ int y11_session_init(struct y11_session *s)
 
 void y11_session_dispatch(struct y11_session *s)
 {
-    if (s->seat != NULL)
+    if (s->seat != NULL) {
         (void)libseat_dispatch(s->seat, 0);
+        return;
+    }
+
+    /* Direct path: consume the VT switch flags. */
+    if (y11_vt_switch_away) {
+        y11_vt_switch_away = 0;
+        if (s->active) {
+            /* Hand the display back to the console, then allow the
+             * switch to proceed. */
+            y11_drm_restore_console();
+            if (s->drm_card_fd >= 0)
+                (void)ioctl(s->drm_card_fd, DRM_IOCTL_DROP_MASTER, 0);
+            s->active = false;
+            if (y11_debug)
+                fprintf(stderr, "y11: VT switch away (master dropped)\n");
+        }
+        (void)ioctl(s->tty_fd, VT_RELDISP, 1);
+    }
+    if (y11_vt_switch_back) {
+        y11_vt_switch_back = 0;
+        if (!s->active && s->drm_card_fd >= 0) {
+            (void)ioctl(s->drm_card_fd, DRM_IOCTL_SET_MASTER, 0);
+            y11_drm_mode_set_all();
+            s->active = true;
+            if (y11_debug)
+                fprintf(stderr, "y11: VT switch back (master re-taken)\n");
+        }
+    }
 }
 
 void y11_session_shutdown(struct y11_session *s)
 {
+    /* Give the VT back to the kernel before tearing anything down. */
+    if (s->tty_fd >= 0) {
+        struct vt_mode vtm;
+
+        memset(&vtm, 0, sizeof(vtm));
+        vtm.mode = VT_AUTO;
+        (void)ioctl(s->tty_fd, VT_SETMODE, &vtm);
+        close(s->tty_fd);
+        s->tty_fd = -1;
+    }
     if (s->drm_device_id >= 0 && s->seat != NULL)
         (void)libseat_close_device(s->seat, s->drm_device_id);
     if (s->drm_card_fd >= 0) {

@@ -66,6 +66,7 @@ typedef struct y11_session {
     int seat_fd;                /* libseat pollable connection */
     int drm_card_fd;            /* the card node fd */
     int drm_device_id;          /* assigned by libseat_open_device */
+    int tty_fd;                 /* console tty (direct path only) */
     bool active;                /* false while switched away from the VT */
 } y11_session_t;
 
@@ -81,6 +82,7 @@ int              y11_drm_init(struct y11_session *s);
 void             y11_drm_shutdown(void);
 struct y11_output *y11_drm_outputs(void);
 void             y11_drm_restore_console(void);
+void             y11_drm_set_tty(int fd);
 int              y11_drm_mode_set_all(void);
 int              y11_drm_page_flip(struct y11_output *out);
 
