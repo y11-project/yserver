@@ -392,13 +392,12 @@ void y11_drm_restore_console(void)
  */
 int y11_drm_page_flip(struct y11_output *out)
 {
-    uint8_t front = (uint8_t)(out->back_buffer ^ 1);
     int r;
 
     if (out->pflip_pending)
         return 0;               /* one flip in flight at a time */
     r = drmModePageFlip(out->drm_fd, out->crtc_id,
-                        out->buffers[front].fb_id,
+                        out->buffers[out->back_buffer].fb_id,
                         DRM_MODE_PAGE_FLIP_EVENT, out);
     if (r != 0) {
         fprintf(stderr, "y11: drmModePageFlip(%u): %s\n", out->crtc_id,
