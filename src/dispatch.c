@@ -623,6 +623,17 @@ static int y11_parse_color(const char *name, size_t len,
             return 0;
         }
     }
+    if (len >= 5 && (memcmp(name, "gray", 4) == 0 || memcmp(name, "grey", 4) == 0)) {
+        char *endp;
+        long val = strtol(name + 4, &endp, 10);
+        if (endp == name + len && val >= 0 && val <= 100) {
+            uint16_t g = (uint16_t)((val * 65535L) / 100L);
+            *red = g;
+            *green = g;
+            *blue = g;
+            return 0;
+        }
+    }
     return -1;
 }
 
@@ -1280,6 +1291,18 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_window_req_destroy(c, pkt, len, data_off);
     case Y11_REQ_DESTROY_SUBWINDOWS:
         return y11_window_req_destroy_subwindows(c, pkt, len, data_off);
+    case Y11_REQ_CHANGE_SAVE_SET: {
+        uint32_t wid;
+
+        if (len - data_off < 4u)
+            return y11_dispatch_bad_length(c, pkt[0]);
+        wid = y11_wire_get32(pkt + data_off);
+        if (y11_window_get(wid) == NULL) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW, wid, pkt[0]);
+            return 0;
+        }
+        return 0;
+    }
     case Y11_REQ_REPARENT_WINDOW:
         return y11_window_req_reparent(c, pkt, len, data_off);
     case Y11_REQ_CIRCULATE_WINDOW:
@@ -1373,6 +1396,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_grab_req_key(c, pkt, len, data_off);
     case Y11_REQ_UNGRAB_KEY:
         return y11_grab_req_ungrab_key(c, pkt, len, data_off);
+    case Y11_REQ_GRAB_SERVER:
+    case Y11_REQ_UNGRAB_SERVER:
+        return 0;
     case Y11_REQ_GET_INPUT_FOCUS:
         return y11_dispatch_get_input_focus(c);
     case Y11_REQ_GET_KEYBOARD_MAPPING:
@@ -1439,6 +1465,7 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_render_req_put_image(c, pkt, len, data_off);
     case Y11_REQ_GET_IMAGE:
         return y11_render_req_get_image(c, pkt, len, data_off);
+    case Y11_REQ_SET_CLOSE_DOWN_MODE:
     case Y11_REQ_NO_OPERATION:
         return 0;               /* no reply */
     default:

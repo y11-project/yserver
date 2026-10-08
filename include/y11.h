@@ -301,6 +301,7 @@ enum y11_req_opcode {
     Y11_REQ_GET_WINDOW_ATTRIBUTES    = 3,
     Y11_REQ_DESTROY_WINDOW           = 4,
     Y11_REQ_DESTROY_SUBWINDOWS       = 5,
+    Y11_REQ_CHANGE_SAVE_SET          = 6,
     Y11_REQ_REPARENT_WINDOW          = 7,
     Y11_REQ_MAP_WINDOW               = 8,
     Y11_REQ_MAP_SUBWINDOWS           = 9,
@@ -328,6 +329,8 @@ enum y11_req_opcode {
     Y11_REQ_GRAB_KEY                 = 33,
     Y11_REQ_UNGRAB_KEY               = 34,
     Y11_REQ_ALLOW_EVENTS             = 35,
+    Y11_REQ_GRAB_SERVER              = 36,
+    Y11_REQ_UNGRAB_SERVER            = 37,
     Y11_REQ_SET_INPUT_FOCUS          = 42,
     Y11_REQ_GET_INPUT_FOCUS          = 43,
     Y11_REQ_QUERY_POINTER           = 38,
@@ -376,6 +379,7 @@ enum y11_req_opcode {
     Y11_REQ_GET_POINTER_CONTROL      = 106,
     Y11_REQ_SET_SCREEN_SAVER         = 107,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
+    Y11_REQ_SET_CLOSE_DOWN_MODE      = 112,
     Y11_REQ_FORCE_SCREEN_SAVER       = 115,
     Y11_REQ_NO_OPERATION             = 127
 };
