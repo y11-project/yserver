@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #if defined(__linux__)
 #include <linux/input.h>
 #elif defined(__FreeBSD__)
@@ -24,6 +25,25 @@
 
 #include "y11.h"
 #include "y11_drm.h"
+
+#ifndef INPUT_PROP_DIRECT
+#define INPUT_PROP_DIRECT 0x01
+#endif
+#ifndef INPUT_PROP_MAX
+#define INPUT_PROP_MAX 0x1f
+#endif
+#ifndef EVIOCGPROP
+#define EVIOCGPROP(len) _IOC(_IOC_READ, 'E', 0x09, len)
+#endif
+#ifndef ABS_MT_POSITION_X
+#define ABS_MT_POSITION_X 0x35
+#endif
+#ifndef ABS_MT_POSITION_Y
+#define ABS_MT_POSITION_Y 0x36
+#endif
+#ifndef BTN_TOOL_FINGER
+#define BTN_TOOL_FINGER 0x145
+#endif
 
 #define Y11_BITS_PER_LONG (sizeof(unsigned long) * 8u)
 #define Y11_TEST_BIT(b, a) \
@@ -37,6 +57,13 @@ struct y11_evdev_dev {
     int     has_keys;
     int     has_rel;
     int     has_abs;
+    int     is_direct;
+    int     touch_down;
+    int     touch_first;
+    int     touch_moved;
+    int32_t touch_prev_x;
+    int32_t touch_prev_y;
+    struct timespec touch_down_time;
     int32_t abs_min_x;
     int32_t abs_max_x;
     int32_t abs_min_y;
@@ -136,6 +163,11 @@ static void y11_evdev_add_device(struct y11_session *s, const char *path)
     if (has_abs) {
         struct input_absinfo abs;
         int ok_x = 0, ok_y = 0;
+        unsigned long props[(INPUT_PROP_MAX + sizeof(unsigned long) * 8 - 1) /
+                            (sizeof(unsigned long) * 8)];
+
+        memset(props, 0, sizeof(props));
+        (void)ioctl(fd, EVIOCGPROP(sizeof(props)), props);
 
         if (ioctl(fd, EVIOCGABS(ABS_X), &abs) == 0 &&
             abs.maximum > abs.minimum) {
@@ -143,16 +175,33 @@ static void y11_evdev_add_device(struct y11_session *s, const char *path)
             dev->abs_max_x = abs.maximum;
             dev->abs_x = abs.value;
             ok_x = 1;
+        } else if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &abs) == 0 &&
+                   abs.maximum > abs.minimum) {
+            dev->abs_min_x = abs.minimum;
+            dev->abs_max_x = abs.maximum;
+            dev->abs_x = abs.value;
+            ok_x = 1;
         }
+
         if (ioctl(fd, EVIOCGABS(ABS_Y), &abs) == 0 &&
             abs.maximum > abs.minimum) {
             dev->abs_min_y = abs.minimum;
             dev->abs_max_y = abs.maximum;
             dev->abs_y = abs.value;
             ok_y = 1;
+        } else if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &abs) == 0 &&
+                   abs.maximum > abs.minimum) {
+            dev->abs_min_y = abs.minimum;
+            dev->abs_max_y = abs.maximum;
+            dev->abs_y = abs.value;
+            ok_y = 1;
         }
-        if (!ok_x || !ok_y)
+
+        if (!ok_x || !ok_y) {
             dev->has_abs = 0;
+        } else {
+            dev->is_direct = Y11_TEST_BIT(INPUT_PROP_DIRECT, props);
+        }
     }
 
     if (y11_debug) {
@@ -267,17 +316,51 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                     y11_input_button(0, btn);
                 }
             } else if (ev->type == EV_ABS) {
-                if (ev->code == ABS_X) {
+                if (ev->code == ABS_X || ev->code == ABS_MT_POSITION_X) {
                     dev->abs_x = ev->value;
                     dev->has_abs_x = 1;
-                } else if (ev->code == ABS_Y) {
+                } else if (ev->code == ABS_Y || ev->code == ABS_MT_POSITION_Y) {
                     dev->abs_y = ev->value;
                     dev->has_abs_y = 1;
                 }
             } else if (ev->type == EV_KEY) {
-                if (ev->code >= BTN_MISC) {
+                if (ev->code == BTN_TOUCH) {
+                    if (ev->value != 0) {
+                        dev->touch_down = 1;
+                        dev->touch_first = 1;
+                        dev->touch_moved = 0;
+                        dev->touch_prev_x = dev->abs_x;
+                        dev->touch_prev_y = dev->abs_y;
+                        clock_gettime(CLOCK_MONOTONIC, &dev->touch_down_time);
+                    } else {
+                        if (dev->touch_down && !dev->touch_moved && !dev->is_direct) {
+                            struct timespec now;
+                            clock_gettime(CLOCK_MONOTONIC, &now);
+                            long ms = (now.tv_sec - dev->touch_down_time.tv_sec) * 1000 +
+                                      (now.tv_nsec - dev->touch_down_time.tv_nsec) / 1000000;
+                            if (ms < 300) {
+                                y11_input_button(1, 1);
+                                y11_input_button(0, 1);
+                            }
+                        }
+                        dev->touch_down = 0;
+                        dev->touch_first = 0;
+                        dev->touch_moved = 0;
+                    }
+                    if (dev->is_direct)
+                        y11_input_button(ev->value != 0, 1);
+                } else if (ev->code == BTN_TOOL_FINGER && !dev->touch_down) {
+                    if (ev->value != 0) {
+                        dev->touch_down = 1;
+                        dev->touch_first = 1;
+                        dev->touch_moved = 0;
+                        dev->touch_prev_x = dev->abs_x;
+                        dev->touch_prev_y = dev->abs_y;
+                        clock_gettime(CLOCK_MONOTONIC, &dev->touch_down_time);
+                    }
+                } else if (ev->code >= BTN_MISC) {
                     uint8_t btn = 0;
-                    if (ev->code == BTN_LEFT || ev->code == BTN_TOUCH)
+                    if (ev->code == BTN_LEFT)
                         btn = 1;
                     else if (ev->code == BTN_MIDDLE)
                         btn = 2;
@@ -307,29 +390,52 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                         dev->rel_dy = 0;
                     }
                     if (dev->has_abs_x || dev->has_abs_y) {
-                        int32_t val_x = dev->abs_x;
-                        int32_t val_y = dev->abs_y;
-                        int32_t sx = 0, sy = 0;
+                        if (dev->is_direct) {
+                            int32_t val_x = dev->abs_x;
+                            int32_t val_y = dev->abs_y;
+                            int32_t sx = 0, sy = 0;
 
-                        if (val_x < dev->abs_min_x)
-                            val_x = dev->abs_min_x;
-                        if (val_x > dev->abs_max_x)
-                            val_x = dev->abs_max_x;
-                        if (val_y < dev->abs_min_y)
-                            val_y = dev->abs_min_y;
-                        if (val_y > dev->abs_max_y)
-                            val_y = dev->abs_max_y;
+                            if (val_x < dev->abs_min_x)
+                                val_x = dev->abs_min_x;
+                            if (val_x > dev->abs_max_x)
+                                val_x = dev->abs_max_x;
+                            if (val_y < dev->abs_min_y)
+                                val_y = dev->abs_min_y;
+                            if (val_y > dev->abs_max_y)
+                                val_y = dev->abs_max_y;
 
-                        if (dev->abs_max_x > dev->abs_min_x)
-                            sx = (int32_t)((int64_t)(val_x - dev->abs_min_x) *
-                                           (y11_screen_width - 1) /
-                                           (dev->abs_max_x - dev->abs_min_x));
-                        if (dev->abs_max_y > dev->abs_min_y)
-                            sy = (int32_t)((int64_t)(val_y - dev->abs_min_y) *
-                                           (y11_screen_height - 1) /
-                                           (dev->abs_max_y - dev->abs_min_y));
+                            if (dev->abs_max_x > dev->abs_min_x)
+                                sx = (int32_t)((int64_t)(val_x - dev->abs_min_x) *
+                                               (y11_screen_width - 1) /
+                                               (dev->abs_max_x - dev->abs_min_x));
+                            if (dev->abs_max_y > dev->abs_min_y)
+                                sy = (int32_t)((int64_t)(val_y - dev->abs_min_y) *
+                                               (y11_screen_height - 1) /
+                                               (dev->abs_max_y - dev->abs_min_y));
 
-                        y11_input_motion_abs((int16_t)sx, (int16_t)sy);
+                            y11_input_motion_abs((int16_t)sx, (int16_t)sy);
+                        } else {
+                            if (dev->touch_down) {
+                                if (dev->touch_first) {
+                                    dev->touch_prev_x = dev->abs_x;
+                                    dev->touch_prev_y = dev->abs_y;
+                                    dev->touch_first = 0;
+                                } else {
+                                    int32_t dx = dev->abs_x - dev->touch_prev_x;
+                                    int32_t dy = dev->abs_y - dev->touch_prev_y;
+
+                                    dev->touch_prev_x = dev->abs_x;
+                                    dev->touch_prev_y = dev->abs_y;
+                                    if (dx > 5 || dx < -5 || dy > 5 || dy < -5)
+                                        dev->touch_moved = 1;
+
+                                    if (dx >= -250 && dx <= 250 &&
+                                        dy >= -250 && dy <= 250) {
+                                        y11_input_motion((int16_t)dx, (int16_t)dy);
+                                    }
+                                }
+                            }
+                        }
                         dev->has_abs_x = 0;
                         dev->has_abs_y = 0;
                     }
