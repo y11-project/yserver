@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 /*
  * Resource identifiers ("XID"s).  Client N owns the range
@@ -558,6 +559,7 @@ struct y11_server {
     struct y11_client *clients[Y11_MAX_CLIENTS];
     int seat_fd;                /* libseat connection, or -1 when headless */
     int drm_fd;                 /* DRM card node, or -1 when headless */
+    pid_t client_pid;           /* child WM/client process, or -1 */
     char socket_path[Y11_SOCK_PATH_MAX];    /* primary socket, e.g. /tmp/.X11-unix/X0 */
     char link_path[Y11_SOCK_PATH_MAX];      /* alias symlink, e.g. /tmp/.y11-unix/Y0 */
 };

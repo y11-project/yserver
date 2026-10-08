@@ -18,6 +18,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "y11.h"
@@ -27,6 +29,7 @@
 int y11_debug;                  /* set from $Y11_DEBUG in main() */
 
 static volatile sig_atomic_t y11_g_running = 1;
+static volatile sig_atomic_t y11_g_chld;
 
 static struct y11_session y11_g_session;
 
@@ -43,6 +46,12 @@ static void y11_handle_signal(int signo)
     y11_g_running = 0;          /* poll(2) returns EINTR and the loop winds down */
 }
 
+static void y11_handle_chld(int signo)
+{
+    (void)signo;
+    y11_g_chld = 1;
+}
+
 static int y11_install_signals(void)
 {
     struct sigaction sa;
@@ -54,6 +63,12 @@ static int y11_install_signals(void)
     if (sigaction(SIGINT, &sa, NULL) != 0)
         return -1;
     if (sigaction(SIGTERM, &sa, NULL) != 0)
+        return -1;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = y11_handle_chld;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGCHLD, &sa, NULL) != 0)
         return -1;
 
     /* Writes to vanished clients must not kill the daemon.
@@ -196,6 +211,23 @@ void y11_server_run(struct y11_server *srv)
         nfds_t n = 1;
         int i, ready;
 
+        if (srv->client_pid > 0) {
+            int status = 0;
+            pid_t p = waitpid(srv->client_pid, &status, WNOHANG);
+
+            if (p > 0) {
+                if (WIFEXITED(status))
+                    fprintf(stderr, "y11: client exited with status %d\n",
+                            WEXITSTATUS(status));
+                else if (WIFSIGNALED(status))
+                    fprintf(stderr, "y11: client terminated by signal %d\n",
+                            WTERMSIG(status));
+                srv->client_pid = -1;
+                y11_g_running = 0;
+                break;
+            }
+        }
+
         fds[0].fd = srv->listen_fd;
         fds[0].events = POLLIN;
         fds[0].revents = 0;
@@ -327,6 +359,27 @@ void y11_server_shutdown(struct y11_server *srv)
 {
     int i;
 
+    if (srv->client_pid > 0) {
+        int status = 0;
+
+        if (waitpid(srv->client_pid, &status, WNOHANG) == 0) {
+            int w;
+
+            (void)kill(srv->client_pid, SIGTERM);
+            for (w = 0; w < 10; w++) {
+                struct timespec ts = { 0, 100000000L };
+
+                if (waitpid(srv->client_pid, &status, WNOHANG) != 0)
+                    break;
+                (void)nanosleep(&ts, NULL);
+            }
+            if (waitpid(srv->client_pid, &status, WNOHANG) == 0)
+                (void)kill(srv->client_pid, SIGKILL);
+            (void)waitpid(srv->client_pid, &status, 0);
+        }
+        srv->client_pid = -1;
+    }
+
     for (i = 0; i < Y11_MAX_CLIENTS; i++) {
         if (srv->clients[i] != NULL)
             y11_client_destroy(srv, srv->clients[i]);
@@ -345,6 +398,7 @@ int y11_server_init(struct y11_server *srv, unsigned display)
     srv->listen_fd = -1;
     srv->seat_fd = -1;
     srv->drm_fd = -1;
+    srv->client_pid = -1;
 
     if (snprintf(srv->socket_path, sizeof(srv->socket_path),
                  "%s/X%u", Y11_SOCKET_DIR, display) >=
@@ -368,15 +422,24 @@ int main(int argc, char **argv)
 {
     struct y11_server srv;
     unsigned display = 0;
+    int client_arg_idx = -1;
 
     if (argc > 1) {
-        char *end;
-        long val = strtol(argv[1], &end, 10);
-        if (*argv[1] == '\0' || *end != '\0' || val < 0 || val > 255) {
-            fprintf(stderr, "usage: y11 [display-number]\n");
-            return EXIT_FAILURE;
+        int idx = 1;
+        const char *arg = argv[idx];
+        const char *num_str = arg;
+        char *end = NULL;
+        long val;
+
+        if (num_str[0] == ':')
+            num_str++;
+        val = strtol(num_str, &end, 10);
+        if (*num_str != '\0' && *end == '\0' && val >= 0 && val <= 255) {
+            display = (unsigned)val;
+            idx++;
         }
-        display = (unsigned)val;
+        if (idx < argc)
+            client_arg_idx = idx;
     }
 
     y11_debug = getenv("Y11_DEBUG") != NULL;
@@ -459,6 +522,33 @@ int main(int argc, char **argv)
 
     fprintf(stderr, "y11: listening on %s (%s -> %s)\n",
             srv.socket_path, srv.link_path, srv.socket_path);
+
+    if (client_arg_idx > 0) {
+        pid_t pid = fork();
+
+        if (pid < 0) {
+            fprintf(stderr, "y11: failed to fork client: %s\n",
+                    strerror(errno));
+        } else if (pid == 0) {
+            char disp_str[16];
+
+            (void)snprintf(disp_str, sizeof(disp_str), ":%u", display);
+            (void)setenv("DISPLAY", disp_str, 1);
+
+            (void)signal(SIGINT, SIG_DFL);
+            (void)signal(SIGTERM, SIG_DFL);
+            (void)signal(SIGPIPE, SIG_DFL);
+
+            execvp(argv[client_arg_idx], &argv[client_arg_idx]);
+            fprintf(stderr, "y11: execvp \"%s\" failed: %s\n",
+                    argv[client_arg_idx], strerror(errno));
+            _exit(127);
+        } else {
+            fprintf(stderr, "y11: spawned client \"%s\" (pid %d)\n",
+                    argv[client_arg_idx], (int)pid);
+            srv.client_pid = pid;
+        }
+    }
 
     y11_server_run(&srv);
 
