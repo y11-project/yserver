@@ -98,6 +98,8 @@ static void y11_damage_descendants(struct y11_window *win, int32_t x,
 void y11_damage_mapped(struct y11_window *win, int32_t x, int32_t y,
                        uint32_t w, uint32_t h)
 {
+    if (win->map_state == Y11_MAP_STATE_VIEWABLE)
+        y11_scanout_mark_dirty(win->abs_x + x, win->abs_y + y, w, h);
     y11_damage_expose(win, x, y, (int32_t)w, (int32_t)h);
     y11_damage_descendants(win, x, y, (int32_t)w, (int32_t)h);
 }
@@ -119,9 +121,9 @@ void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
     if (win == NULL)
         return;
 
-    /* Root pixels feed the hardware scanout. */
-    if (win->id == Y11_SCREEN_ROOT)
-        y11_scanout_mark_dirty(x, y, w, h);
+    /* Viewable window pixels feed the hardware scanout. */
+    if (win->map_state == Y11_MAP_STATE_VIEWABLE)
+        y11_scanout_mark_dirty(win->abs_x + x, win->abs_y + y, w, h);
 
     y11_damage_descendants(win, x, y, (int32_t)w, (int32_t)h);
 }

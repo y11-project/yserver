@@ -196,6 +196,52 @@ void y11_drm_handle_events(int fd)
 
 /* ---- composition ---------------------------------------------------------------- */
 
+/* Composite viewable windows onto the scanout buffer in stacking order. */
+static void y11_scanout_composite_window(y11_drm_fb_t *fb,
+                                         const struct y11_window *win,
+                                         int32_t dx, int32_t dy,
+                                         uint32_t dw, uint32_t dh)
+{
+    const struct y11_window *child;
+
+    for (child = win->first_child; child != NULL; child = child->next_sibling) {
+        if (child->map_state != Y11_MAP_STATE_VIEWABLE)
+            continue;
+
+        if (child->window_class != Y11_WINDOW_CLASS_INPUT_ONLY &&
+            child->drawable.pixels != NULL) {
+            int32_t cx1 = child->abs_x;
+            int32_t cy1 = child->abs_y;
+            int32_t cx2 = cx1 + (int32_t)child->width;
+            int32_t cy2 = cy1 + (int32_t)child->height;
+
+            int32_t ix1 = cx1 > dx ? cx1 : dx;
+            int32_t iy1 = cy1 > dy ? cy1 : dy;
+            int32_t ix2 = cx2 < (dx + (int32_t)dw) ? cx2 : (dx + (int32_t)dw);
+            int32_t iy2 = cy2 < (dy + (int32_t)dh) ? cy2 : (dy + (int32_t)dh);
+
+            if (ix1 < ix2 && iy1 < iy2) {
+                int32_t row;
+                int32_t cols = ix2 - ix1;
+
+                for (row = iy1; row < iy2; row++) {
+                    int32_t child_row = row - cy1;
+                    int32_t child_col = ix1 - cx1;
+
+                    memcpy((uint8_t *)fb->map + (size_t)row * fb->stride +
+                               (size_t)ix1 * 4,
+                           (uint8_t *)child->drawable.pixels +
+                               (size_t)child_row * child->drawable.stride +
+                               (size_t)child_col * 4,
+                           (size_t)cols * 4);
+                }
+            }
+        }
+
+        y11_scanout_composite_window(fb, child, dx, dy, dw, dh);
+    }
+}
+
 /* Blit one dirty rect from the root backbuffer into a scanout buffer. */
 static void y11_scanout_blit(struct y11_output *out, int32_t x, int32_t y,
                              uint32_t w, uint32_t h)
@@ -204,6 +250,7 @@ static void y11_scanout_blit(struct y11_output *out, int32_t x, int32_t y,
     int32_t rows = (int32_t)h;
     int32_t cols = (int32_t)w;
     int32_t row;
+    struct y11_window *root;
 
     if (x + cols > (int32_t)fb->width)
         cols = (int32_t)fb->width - x;
@@ -220,6 +267,11 @@ static void y11_scanout_blit(struct y11_output *out, int32_t x, int32_t y,
                    (size_t)x * 4,
                (size_t)cols * 4);
     }
+
+    root = y11_window_get(Y11_SCREEN_ROOT);
+    if (root != NULL)
+        y11_scanout_composite_window(fb, root, x, y, (uint32_t)cols,
+                                     (uint32_t)rows);
 }
 
 /*

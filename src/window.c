@@ -620,8 +620,10 @@ static int y11_window_do_unmap(struct y11_window *win)
     was_viewable = (win->map_state == Y11_MAP_STATE_VIEWABLE);
     win->map_state = Y11_MAP_STATE_UNMAPPED;
     y11_event_send_unmap(win, 0);
-    if (was_viewable)
+    if (was_viewable) {
+        y11_scanout_mark_dirty(win->abs_x, win->abs_y, win->width, win->height);
         y11_window_propagate_map_state(win, 0);
+    }
     return 0;
 }
 
