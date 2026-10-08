@@ -155,8 +155,17 @@ static int y11_session_direct(struct y11_session *s)
     vtm.relsig = SIGUSR1;
     vtm.acqsig = SIGUSR2;
     (void)ioctl(s->tty_fd, VT_SETMODE, &vtm);
-    (void)signal(SIGUSR1, y11_vt_signal);
-    (void)signal(SIGUSR2, y11_vt_signal);
+    {
+        struct sigaction sa;
+
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = y11_vt_signal;
+        sigemptyset(&sa.sa_mask);
+        /* No SA_RESTART: poll(2) must return EINTR to handle VT switches. */
+        sa.sa_flags = 0;
+        (void)sigaction(SIGUSR1, &sa, NULL);
+        (void)sigaction(SIGUSR2, &sa, NULL);
+    }
 
     /* Claim the VT: activate it so the display and the keyboard land
      * here instead of leaving the user typing into a blind shell. */
@@ -279,11 +288,12 @@ void y11_session_dispatch(struct y11_session *s)
         y11_vt_switch_back = 0;
         if (!s->active && s->drm_card_fd >= 0) {
             (void)ioctl(s->drm_card_fd, DRM_IOCTL_SET_MASTER, 0);
-            y11_drm_mode_set_all();
+            y11_scanout_restore();
             s->active = true;
             if (y11_debug)
                 fprintf(stderr, "y11: VT switch back (master re-taken)\n");
         }
+        (void)ioctl(s->tty_fd, VT_RELDISP, VT_ACKACQ);
     }
 }
 
@@ -296,6 +306,8 @@ void y11_session_shutdown(struct y11_session *s)
         memset(&vtm, 0, sizeof(vtm));
         vtm.mode = VT_AUTO;
         (void)ioctl(s->tty_fd, VT_SETMODE, &vtm);
+        (void)signal(SIGUSR1, SIG_DFL);
+        (void)signal(SIGUSR2, SIG_DFL);
         close(s->tty_fd);
         s->tty_fd = -1;
     }
