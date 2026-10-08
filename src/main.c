@@ -55,11 +55,16 @@ static int y11_install_signals(void)
     if (sigaction(SIGTERM, &sa, NULL) != 0)
         return -1;
 
-    /* Writes to vanished clients must not kill the daemon. */
+    /* Writes to vanished clients must not kill the daemon.
+     * Background tty access must not stop the process. */
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SIG_IGN;
     sigemptyset(&sa.sa_mask);
     if (sigaction(SIGPIPE, &sa, NULL) != 0)
+        return -1;
+    if (sigaction(SIGTTIN, &sa, NULL) != 0)
+        return -1;
+    if (sigaction(SIGTTOU, &sa, NULL) != 0)
         return -1;
 
     return 0;
@@ -237,6 +242,9 @@ void y11_server_run(struct y11_server *srv)
 
         if ((fds[0].revents & POLLIN) != 0)
             y11_server_accept(srv);
+
+        /* Drive VT events and session dispatch on every wakeup. */
+        y11_session_dispatch(&y11_g_session);
 
         for (i = 1; i < (int)n; i++) {
             struct y11_client *c;
