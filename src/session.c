@@ -66,6 +66,9 @@ static void y11_session_disable(struct libseat *seat, void *userdata)
     if (y11_debug)
         fprintf(stderr, "y11: seat disabled (VT switch away)\n");
 
+    /* Hand the display back to the console so the switch shows it. */
+    y11_drm_restore_console();
+
     /* Drop master so the next VT can program the hardware. */
     if (s->drm_card_fd >= 0 && drmIsMaster(s->drm_card_fd))
         (void)drmDropMaster(s->drm_card_fd);
