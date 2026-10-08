@@ -1442,11 +1442,6 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_STORE_NAMED_COLOR:
     case Y11_REQ_ALLOW_EVENTS:
     case Y11_REQ_FORCE_SCREEN_SAVER:
-    case Y11_REQ_COPY_PLANE:
-    case Y11_REQ_POLY_POINT:
-    case Y11_REQ_POLY_LINE:
-    case Y11_REQ_POLY_SEGMENT:
-    case Y11_REQ_POLY_RECTANGLE:
     case Y11_REQ_POLY_ARC:
     case Y11_REQ_FILL_POLY:
     case Y11_REQ_POLY_FILL_ARC:
@@ -1459,6 +1454,16 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_window_req_clear_area(c, pkt, len, data_off);
     case Y11_REQ_COPY_AREA:
         return y11_render_req_copy_area(c, pkt, len, data_off);
+    case Y11_REQ_COPY_PLANE:
+        return y11_render_req_copy_plane(c, pkt, len, data_off);
+    case Y11_REQ_POLY_POINT:
+        return y11_render_req_poly_point(c, pkt, len, data_off);
+    case Y11_REQ_POLY_LINE:
+        return y11_render_req_poly_line(c, pkt, len, data_off);
+    case Y11_REQ_POLY_SEGMENT:
+        return y11_render_req_poly_segment(c, pkt, len, data_off);
+    case Y11_REQ_POLY_RECTANGLE:
+        return y11_render_req_poly_rectangle(c, pkt, len, data_off);
     case Y11_REQ_POLY_FILL_RECTANGLE:
         return y11_render_req_poly_fill_rectangle(c, pkt, len, data_off);
     case Y11_REQ_PUT_IMAGE:

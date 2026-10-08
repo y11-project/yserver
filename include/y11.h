@@ -711,11 +711,21 @@ void y11_gc_purge_client(struct y11_client *c);
 y11_drawable_t *y11_drawable_lookup(yid_t id);
 void y11_render_pixel_ex(y11_drawable_t *d, const struct y11_gc *gc,
                          size_t col, size_t row, uint32_t src);
+int  y11_render_req_poly_point(struct y11_client *c, const uint8_t *pkt,
+                               size_t len, size_t data_off);
+int  y11_render_req_poly_line(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off);
+int  y11_render_req_poly_segment(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off);
+int  y11_render_req_poly_rectangle(struct y11_client *c, const uint8_t *pkt,
+                                   size_t len, size_t data_off);
 int  y11_render_req_poly_fill_rectangle(struct y11_client *c,
                                         const uint8_t *pkt, size_t len,
                                         size_t data_off);
 int  y11_render_req_copy_area(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off);
+int  y11_render_req_copy_plane(struct y11_client *c, const uint8_t *pkt,
+                               size_t len, size_t data_off);
 int  y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off);
 int  y11_render_req_get_image(struct y11_client *c, const uint8_t *pkt,

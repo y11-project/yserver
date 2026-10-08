@@ -452,7 +452,14 @@ void y11_evdev_handle(struct y11_session *s, int fd)
 
                                     dev->touch_prev_x = dev->abs_x;
                                     dev->touch_prev_y = dev->abs_y;
-                                    if (dx > 3 || dx < -3 || dy > 3 || dy < -3)
+
+                                    /* Scale down high-resolution trackpads (e.g. MacBook T2 ~95 units/mm) */
+                                    if (dev->abs_max_x - dev->abs_min_x > 4000) {
+                                        dx = dx / 8;
+                                        dy = dy / 8;
+                                    }
+
+                                    if (dx > 1 || dx < -1 || dy > 1 || dy < -1)
                                         dev->touch_moved = 1;
 
                                     if (dx > 250)
@@ -463,7 +470,8 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                                         dy = 250;
                                     else if (dy < -250)
                                         dy = -250;
-                                    y11_input_motion((int16_t)dx, (int16_t)dy);
+                                    if (dx != 0 || dy != 0)
+                                        y11_input_motion((int16_t)dx, (int16_t)dy);
                                 }
                             }
                         }

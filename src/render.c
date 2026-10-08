@@ -627,3 +627,368 @@ badlength:
     y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
     return 0;
 }
+
+/* Plot one pixel honoring GC clip rectangles and drawable boundaries. */
+static void y11_render_pixel_clipped(y11_drawable_t *d, const struct y11_gc *gc,
+                                    int32_t x, int32_t y, uint32_t color)
+{
+    size_t i;
+
+    if (x < 0 || y < 0 || x >= (int32_t)d->width || y >= (int32_t)d->height)
+        return;
+
+    if (gc->num_clip_rects > 0) {
+        int in_clip = 0;
+        for (i = 0; i < gc->num_clip_rects; i++) {
+            const y11_rect_t *clip = &gc->clip_rects[i];
+            int32_t cx = (int32_t)gc->clip_x_origin + clip->x;
+            int32_t cy = (int32_t)gc->clip_y_origin + clip->y;
+            int32_t cw = clip->width;
+            int32_t ch = clip->height;
+
+            if (x >= cx && y >= cy && x < cx + cw && y < cy + ch) {
+                in_clip = 1;
+                break;
+            }
+        }
+        if (!in_clip)
+            return;
+    }
+
+    y11_render_pixel(d, gc, (size_t)x, (size_t)y, color);
+}
+
+/* Bresenham line drawing between (x0, y0) and (x1, y1). */
+static void y11_render_line_clipped(y11_drawable_t *d, const struct y11_gc *gc,
+                                   int32_t x0, int32_t y0,
+                                   int32_t x1, int32_t y1,
+                                   uint32_t color)
+{
+    int32_t dx = abs(x1 - x0);
+    int32_t dy = abs(y1 - y0);
+    int32_t sx = (x0 < x1) ? 1 : -1;
+    int32_t sy = (y0 < y1) ? 1 : -1;
+    int32_t err = dx - dy;
+
+    for (;;) {
+        y11_render_pixel_clipped(d, gc, x0, y0, color);
+        if (x0 == x1 && y0 == y1)
+            break;
+        {
+            int32_t e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x0 += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                y0 += sy;
+            }
+        }
+    }
+}
+
+/* ---- PolyPoint (opcode 64) ------------------------------------------------ */
+int y11_render_req_poly_point(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    size_t avail, npoints, i;
+    struct y11_gc *gc;
+    y11_drawable_t *d;
+    uint8_t coord_mode = pkt[1];
+    int32_t cur_x = 0, cur_y = 0;
+
+    if (len - data_off < 8u)
+        goto badlength;
+    avail = len - data_off - 8u;
+    if (avail % 4u != 0)
+        goto badlength;
+    npoints = avail / 4u;
+
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
+    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
+                            y11_wire_get32(body + 0));
+    if (d == NULL)
+        return 0;
+
+    for (i = 0; i < npoints; i++) {
+        const uint8_t *p = body + 8 + i * 4u;
+        int16_t px = (int16_t)y11_wire_get16(p + 0);
+        int16_t py = (int16_t)y11_wire_get16(p + 2);
+
+        if (coord_mode == 0) {
+            cur_x = px;
+            cur_y = py;
+        } else {
+            cur_x += px;
+            cur_y += py;
+        }
+        y11_render_pixel_clipped(d, gc, cur_x, cur_y, gc->foreground);
+    }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, 0, 0, d->width, d->height);
+    return 0;
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+
+/* ---- PolyLine (opcode 65) ------------------------------------------------- */
+int y11_render_req_poly_line(struct y11_client *c, const uint8_t *pkt,
+                             size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    size_t avail, npoints, i;
+    struct y11_gc *gc;
+    y11_drawable_t *d;
+    uint8_t coord_mode = pkt[1];
+    int32_t prev_x = 0, prev_y = 0;
+
+    if (len - data_off < 8u)
+        goto badlength;
+    avail = len - data_off - 8u;
+    if (avail % 4u != 0)
+        goto badlength;
+    npoints = avail / 4u;
+
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
+    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
+                            y11_wire_get32(body + 0));
+    if (d == NULL)
+        return 0;
+
+    for (i = 0; i < npoints; i++) {
+        const uint8_t *p = body + 8 + i * 4u;
+        int16_t px = (int16_t)y11_wire_get16(p + 0);
+        int16_t py = (int16_t)y11_wire_get16(p + 2);
+        int32_t cur_x, cur_y;
+
+        if (coord_mode == 0 || i == 0) {
+            cur_x = (coord_mode == 0) ? px : (prev_x + px);
+            cur_y = (coord_mode == 0) ? py : (prev_y + py);
+        } else {
+            cur_x = prev_x + px;
+            cur_y = prev_y + py;
+        }
+
+        if (i > 0)
+            y11_render_line_clipped(d, gc, prev_x, prev_y, cur_x, cur_y, gc->foreground);
+        else if (npoints == 1)
+            y11_render_pixel_clipped(d, gc, cur_x, cur_y, gc->foreground);
+
+        prev_x = cur_x;
+        prev_y = cur_y;
+    }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, 0, 0, d->width, d->height);
+    return 0;
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+
+/* ---- PolySegment (opcode 66) ---------------------------------------------- */
+int y11_render_req_poly_segment(struct y11_client *c, const uint8_t *pkt,
+                                size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    size_t avail, nsegs, i;
+    struct y11_gc *gc;
+    y11_drawable_t *d;
+
+    if (len - data_off < 8u)
+        goto badlength;
+    avail = len - data_off - 8u;
+    if (avail % 8u != 0)
+        goto badlength;
+    nsegs = avail / 8u;
+
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
+    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
+                            y11_wire_get32(body + 0));
+    if (d == NULL)
+        return 0;
+
+    for (i = 0; i < nsegs; i++) {
+        const uint8_t *s = body + 8 + i * 8u;
+        int32_t x1 = (int16_t)y11_wire_get16(s + 0);
+        int32_t y1 = (int16_t)y11_wire_get16(s + 2);
+        int32_t x2 = (int16_t)y11_wire_get16(s + 4);
+        int32_t y2 = (int16_t)y11_wire_get16(s + 6);
+
+        y11_render_line_clipped(d, gc, x1, y1, x2, y2, gc->foreground);
+    }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, 0, 0, d->width, d->height);
+    return 0;
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+
+/* ---- PolyRectangle (opcode 67) -------------------------------------------- */
+int y11_render_req_poly_rectangle(struct y11_client *c, const uint8_t *pkt,
+                                  size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    size_t avail, nrects, i;
+    struct y11_gc *gc;
+    y11_drawable_t *d;
+
+    if (len - data_off < 8u)
+        goto badlength;
+    avail = len - data_off - 8u;
+    if (avail % 8u != 0)
+        goto badlength;
+    nrects = avail / 8u;
+
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
+    d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
+                            y11_wire_get32(body + 0));
+    if (d == NULL)
+        return 0;
+
+    for (i = 0; i < nrects; i++) {
+        const uint8_t *r = body + 8 + i * 8u;
+        int32_t x = (int16_t)y11_wire_get16(r + 0);
+        int32_t y = (int16_t)y11_wire_get16(r + 2);
+        int32_t w = (uint16_t)y11_wire_get16(r + 4);
+        int32_t h = (uint16_t)y11_wire_get16(r + 6);
+
+        /* 4 outline segments: top, right, bottom, left */
+        y11_render_line_clipped(d, gc, x, y, x + w, y, gc->foreground);
+        y11_render_line_clipped(d, gc, x + w, y, x + w, y + h, gc->foreground);
+        y11_render_line_clipped(d, gc, x + w, y + h, x, y + h, gc->foreground);
+        y11_render_line_clipped(d, gc, x, y + h, x, y, gc->foreground);
+    }
+
+    if (d->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(d, 0, 0, d->width, d->height);
+    return 0;
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+
+/* ---- CopyPlane (opcode 63) ------------------------------------------------ */
+int y11_render_req_copy_plane(struct y11_client *c, const uint8_t *pkt,
+                              size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    y11_drawable_t *src, *dst;
+    struct y11_gc *gc;
+    int32_t sx, sy, dx, dy, w, h;
+    int32_t row, col;
+    uint32_t bit_plane;
+    uint32_t *snap;
+    size_t snap_stride;
+
+    if (len - data_off != 28u)
+        goto badlength;
+
+    src = y11_drawable_lookup(y11_wire_get32(body + 0));
+    dst = y11_render_validate(c, pkt[0], y11_wire_get32(body + 8),
+                              y11_wire_get32(body + 4));
+    gc = y11_render_gc_lookup(y11_wire_get32(body + 8));
+    if (dst == NULL)
+        return 0;
+    if (src == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_DRAWABLE,
+                                y11_wire_get32(body + 0), pkt[0]);
+        return 0;
+    }
+    if (src->pixels == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH,
+                                y11_wire_get32(body + 0), pkt[0]);
+        return 0;
+    }
+
+    bit_plane = y11_wire_get32(body + 24);
+    /* bit_plane must have exactly one bit set */
+    if (bit_plane == 0 || (bit_plane & (bit_plane - 1u)) != 0) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, bit_plane, pkt[0]);
+        return 0;
+    }
+
+    sx = (int16_t)y11_wire_get16(body + 12);
+    sy = (int16_t)y11_wire_get16(body + 14);
+    dx = (int16_t)y11_wire_get16(body + 16);
+    dy = (int16_t)y11_wire_get16(body + 18);
+    w = (int16_t)y11_wire_get16(body + 20);
+    h = (int16_t)y11_wire_get16(body + 22);
+    if (w <= 0 || h <= 0)
+        return 0;
+
+    if (sx < 0) {
+        w += sx;
+        dx -= sx;
+        sx = 0;
+    }
+    if (sy < 0) {
+        h += sy;
+        dy -= sy;
+        sy = 0;
+    }
+    if (sx + w > (int32_t)src->width)
+        w = (int32_t)src->width - sx;
+    if (sy + h > (int32_t)src->height)
+        h = (int32_t)src->height - sy;
+    if (w <= 0 || h <= 0)
+        return 0;
+
+    snap = NULL;
+    snap_stride = (size_t)w;
+    if (src == dst || src->pixels == dst->pixels) {
+        snap = malloc((size_t)w * (size_t)h * 4u);
+        if (snap == NULL) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_ALLOC, 0, pkt[0]);
+            return 0;
+        }
+        for (row = 0; row < h; row++) {
+            memcpy((uint8_t *)snap + (size_t)row * snap_stride * 4u,
+                   (uint8_t *)src->pixels +
+                       ((size_t)(sy + row) * (src->stride / 4u) +
+                        (size_t)sx) * 4u,
+                   (size_t)w * 4u);
+        }
+    }
+
+    for (row = 0; row < h; row++) {
+        for (col = 0; col < w; col++) {
+            int32_t dcx = dx + col;
+            int32_t dcy = dy + row;
+            uint32_t pix;
+            uint32_t out_color;
+
+            if (dcx < 0 || dcy < 0 || dcx >= (int32_t)dst->width ||
+                dcy >= (int32_t)dst->height)
+                continue;
+            if (snap != NULL)
+                pix = snap[(size_t)row * snap_stride + (size_t)col];
+            else
+                pix = src->pixels[(size_t)(sy + row) * (src->stride / 4u) +
+                                  (size_t)(sx + col)];
+
+            out_color = (pix & bit_plane) ? gc->foreground : gc->background;
+            y11_render_pixel_clipped(dst, gc, dcx, dcy, out_color);
+        }
+    }
+    free(snap);
+
+    if (dst->type == Y11_DRAWABLE_WINDOW)
+        y11_damage_drawn(dst, dx, dy, (uint32_t)w, (uint32_t)h);
+    return 0;
+
+badlength:
+    y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, pkt[0]);
+    return 0;
+}
+

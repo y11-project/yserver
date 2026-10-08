@@ -99,9 +99,9 @@ static int y11_prepare_paths(void)
         perror("y11: mkdir " Y11_LINK_DIR);
         return -1;
     }
-    if (chmod(Y11_SOCKET_DIR, 0777) != 0)
+    if (chmod(Y11_SOCKET_DIR, 0777) != 0 && errno != EPERM)
         perror("y11: warning: chmod " Y11_SOCKET_DIR);
-    if (chmod(Y11_LINK_DIR, 0777) != 0)
+    if (chmod(Y11_LINK_DIR, 0777) != 0 && errno != EPERM)
         perror("y11: warning: chmod " Y11_LINK_DIR);
     return 0;
 }

@@ -495,12 +495,57 @@ typedef struct {
 } y11_set_clip_rectangles_req;  /* 12 bytes + 8-byte rectangles */
 
 typedef struct {
+    int16_t x, y;
+} y11_point_wire;               /* 4 bytes */
+
+typedef struct {
+    int16_t x1, y1, x2, y2;
+} y11_segment_wire;             /* 8 bytes */
+
+typedef struct {
+    uint8_t  opcode;            /* 64 = PolyPoint, 65 = PolyLine */
+    uint8_t  coord_mode;        /* 0 Origin, 1 Previous */
+    uint16_t length;
+    uint32_t drawable;
+    uint32_t gc;
+} y11_poly_point_req;           /* 12 bytes + 4-byte points */
+
+typedef struct {
+    uint8_t  opcode;            /* 66 = PolySegment */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t drawable;
+    uint32_t gc;
+} y11_poly_segment_req;         /* 12 bytes + 8-byte segments */
+
+typedef struct {
+    uint8_t  opcode;            /* 67 = PolyRectangle */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t drawable;
+    uint32_t gc;
+} y11_poly_rectangle_req;       /* 12 bytes + 8-byte rectangles */
+
+typedef struct {
     uint8_t  opcode;            /* 70 = PolyFillRectangle */
     uint8_t  pad0;
     uint16_t length;
-    uint32_t gc;
     uint32_t drawable;
+    uint32_t gc;
 } y11_poly_fill_rectangle_req;  /* 12 bytes + 8-byte rectangles */
+
+typedef struct {
+    uint8_t  opcode;            /* 63 = CopyPlane */
+    uint8_t  pad0;
+    uint16_t length;
+    uint32_t src_drawable;
+    uint32_t dst_drawable;
+    uint32_t gc;
+    int16_t  src_x, src_y;
+    int16_t  dst_x, dst_y;
+    uint16_t width, height;
+    uint32_t bit_plane;
+} y11_copy_plane_req;            /* 32 bytes */
 
 typedef struct {
     uint8_t  opcode;            /* 62 = CopyArea */
@@ -949,5 +994,11 @@ typedef char y11_wire_chk_grab_key_req[(sizeof(y11_grab_key_req) == 16) ? 1 : -1
 typedef char y11_wire_chk_set_input_focus_req[(sizeof(y11_set_input_focus_req) == 12) ? 1 : -1];
 typedef char y11_wire_chk_send_event_req[(sizeof(y11_send_event_req) == 12) ? 1 : -1];
 typedef char y11_wire_chk_get_keyboard_mapping_reply[(sizeof(y11_get_keyboard_mapping_reply) == 32) ? 1 : -1];
+typedef char y11_wire_chk_point_wire[(sizeof(y11_point_wire) == 4) ? 1 : -1];
+typedef char y11_wire_chk_segment_wire[(sizeof(y11_segment_wire) == 8) ? 1 : -1];
+typedef char y11_wire_chk_poly_point_req[(sizeof(y11_poly_point_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_poly_segment_req[(sizeof(y11_poly_segment_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_poly_rectangle_req[(sizeof(y11_poly_rectangle_req) == 12) ? 1 : -1];
+typedef char y11_wire_chk_copy_plane_req[(sizeof(y11_copy_plane_req) == 32) ? 1 : -1];
 
 #endif /* Y11_WIRE_H */
