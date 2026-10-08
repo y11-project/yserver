@@ -1335,22 +1335,27 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
 
     /* Restack. */
     if ((value_mask & Y11_CW_STACK_MODE) != 0) {
-        if (stack_mode == Y11_STACK_ABOVE || stack_mode == Y11_STACK_BELOW) {
+        if ((value_mask & Y11_CW_SIBLING) != 0) {
             struct y11_window *sib = y11_window_get(sibling);
 
-            if ((value_mask & Y11_CW_SIBLING) == 0 || sib == NULL ||
-                sib == win || sib->parent != win->parent) {
+            if (sib == NULL || sib == win || sib->parent != win->parent) {
                 y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, sibling, pkt[0]);
                 return 0;
             }
             if (stack_mode == Y11_STACK_ABOVE)
                 y11_window_attach_above(win, sib);
-            else
+            else if (stack_mode == Y11_STACK_BELOW)
                 y11_window_attach_below(win, sib);
-        } else if (stack_mode == Y11_STACK_TOP_IF) {
-            y11_window_attach_extreme(win, 1);
-        } else if (stack_mode == Y11_STACK_BOTTOM_IF) {
-            y11_window_attach_extreme(win, 0);
+            else if (stack_mode == Y11_STACK_TOP_IF)
+                y11_window_attach_above(win, sib);
+            else if (stack_mode == Y11_STACK_BOTTOM_IF)
+                y11_window_attach_below(win, sib);
+        } else {
+            if (stack_mode == Y11_STACK_ABOVE || stack_mode == Y11_STACK_TOP_IF)
+                y11_window_attach_extreme(win, 1);
+            else if (stack_mode == Y11_STACK_BELOW ||
+                     stack_mode == Y11_STACK_BOTTOM_IF)
+                y11_window_attach_extreme(win, 0);
         }
         /* Y11_STACK_OPPOSITE is not applied (no occlusion model yet). */
     }
