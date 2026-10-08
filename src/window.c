@@ -1317,6 +1317,11 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
     }
 
     /* Apply the geometry update and invalidate the absolute caches. */
+    int32_t old_abs_x = win->abs_x;
+    int32_t old_abs_y = win->abs_y;
+    uint32_t old_w = win->width;
+    uint32_t old_h = win->height;
+
     if ((value_mask & Y11_CW_X) != 0)
         win->x = (int16_t)x;
     if ((value_mask & Y11_CW_Y) != 0)
@@ -1361,6 +1366,11 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
                 y11_window_attach_extreme(win, 0);
         }
         /* Y11_STACK_OPPOSITE is not applied (no occlusion model yet). */
+    }
+
+    if (win->map_state == Y11_MAP_STATE_VIEWABLE) {
+        y11_scanout_mark_dirty(old_abs_x, old_abs_y, old_w, old_h);
+        y11_scanout_mark_dirty(win->abs_x, win->abs_y, win->width, win->height);
     }
 
     y11_event_send_configure(win);

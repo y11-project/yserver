@@ -813,7 +813,9 @@ static int y11_render_composite_glyphs(struct y11_client *c,
     op = body[0];
     src_id = y11_wire_get32(body + 4);
     dst_id = y11_wire_get32(body + 8);
+    /* maskFormat is at body + 12 */
     gsid = y11_wire_get32(body + 16);
+    /* xSrc is at body + 20, ySrc is at body + 22 */
 
     src = y11_render_picture_find(src_id);
     dst = y11_render_picture_find(dst_id);
