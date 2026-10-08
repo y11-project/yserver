@@ -395,6 +395,7 @@ int y11_session_init(struct y11_session *s)
         s->seat_fd = -1;
         return -1;
     }
+    s->active = true;
     y11_active_session = s;
     return 0;
 }

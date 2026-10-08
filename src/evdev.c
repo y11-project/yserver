@@ -44,6 +44,9 @@
 #ifndef BTN_TOOL_FINGER
 #define BTN_TOOL_FINGER 0x145
 #endif
+#ifndef ABS_MT_TRACKING_ID
+#define ABS_MT_TRACKING_ID 0x39
+#endif
 
 #define Y11_BITS_PER_LONG (sizeof(unsigned long) * 8u)
 #define Y11_TEST_BIT(b, a) \
@@ -322,6 +325,29 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                 } else if (ev->code == ABS_Y || ev->code == ABS_MT_POSITION_Y) {
                     dev->abs_y = ev->value;
                     dev->has_abs_y = 1;
+                } else if (ev->code == ABS_MT_TRACKING_ID) {
+                    if (ev->value >= 0) {
+                        dev->touch_down = 1;
+                        dev->touch_first = 1;
+                        dev->touch_moved = 0;
+                        dev->touch_prev_x = dev->abs_x;
+                        dev->touch_prev_y = dev->abs_y;
+                        clock_gettime(CLOCK_MONOTONIC, &dev->touch_down_time);
+                    } else {
+                        if (dev->touch_down && !dev->touch_moved && !dev->is_direct) {
+                            struct timespec now;
+                            clock_gettime(CLOCK_MONOTONIC, &now);
+                            long ms = (now.tv_sec - dev->touch_down_time.tv_sec) * 1000 +
+                                      (now.tv_nsec - dev->touch_down_time.tv_nsec) / 1000000;
+                            if (ms < 300) {
+                                y11_input_button(1, 1);
+                                y11_input_button(0, 1);
+                            }
+                        }
+                        dev->touch_down = 0;
+                        dev->touch_first = 0;
+                        dev->touch_moved = 0;
+                    }
                 }
             } else if (ev->type == EV_KEY) {
                 if (ev->code == BTN_TOUCH) {
@@ -426,13 +452,18 @@ void y11_evdev_handle(struct y11_session *s, int fd)
 
                                     dev->touch_prev_x = dev->abs_x;
                                     dev->touch_prev_y = dev->abs_y;
-                                    if (dx > 5 || dx < -5 || dy > 5 || dy < -5)
+                                    if (dx > 3 || dx < -3 || dy > 3 || dy < -3)
                                         dev->touch_moved = 1;
 
-                                    if (dx >= -250 && dx <= 250 &&
-                                        dy >= -250 && dy <= 250) {
-                                        y11_input_motion((int16_t)dx, (int16_t)dy);
-                                    }
+                                    if (dx > 250)
+                                        dx = 250;
+                                    else if (dx < -250)
+                                        dx = -250;
+                                    if (dy > 250)
+                                        dy = 250;
+                                    else if (dy < -250)
+                                        dy = -250;
+                                    y11_input_motion((int16_t)dx, (int16_t)dy);
                                 }
                             }
                         }
