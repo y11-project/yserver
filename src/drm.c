@@ -19,6 +19,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <sys/ioctl.h>
+#include <drm/drm.h>
+
 #include "y11_drm.h"
 
 static struct y11_output *y11_output_list;
@@ -250,6 +253,59 @@ int y11_drm_init(struct y11_session *s)
 }
 
 /* Point every output's CRTC at its front buffer. */
+/*
+ * Watchdog: an orphaned child (its own session, so process-group
+ * signals cannot reach it) that hands the CRTCs back to the console
+ * if the server dies without cleanup - SIGKILL, crash, anything.  The
+ * parent holds the write end of a pipe; its death closes the pipe and
+ * the child restores the saved console state through its own copy of
+ * the card fd, which still holds DRM master.
+ */
+static int y11_drm_watchdog_fd = -1;
+
+static void y11_drm_spawn_watchdog(struct y11_output *out)
+{
+    int fds[2];
+    pid_t pid;
+
+    if (pipe(fds) != 0)
+        return;
+    pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return;
+    }
+    if (pid == 0) {
+        uint8_t b;
+        int i;
+
+        close(fds[1]);
+        (void)setsid();
+        /* Keep only the pipe and the card fd; everything else (the
+         * listening sockets included) must die with the server. */
+        for (i = 3; i < 1024; i++) {
+            if (i == fds[0] || i == out->drm_fd)
+                continue;
+            (void)close(i);
+        }
+        /* Wait for the server to exit: the pipe closes on its death. */
+        while (read(fds[0], &b, 1) > 0)
+            ;
+        if (out->console_saved) {
+            (void)drmModeSetCrtc(out->drm_fd, out->crtc_id,
+                                 out->console_fb, out->console_x,
+                                 out->console_y, &out->connector_id, 1,
+                                 &out->console_mode);
+        }
+        (void)ioctl(out->drm_fd, DRM_IOCTL_DROP_MASTER, 0);
+        _exit(0);
+    }
+    /* Parent: keep the write end; closing it tells the watchdog. */
+    close(fds[0]);
+    y11_drm_watchdog_fd = fds[1];
+}
+
 int y11_drm_mode_set_all(void)
 {
     struct y11_output *out;
@@ -290,6 +346,8 @@ int y11_drm_mode_set_all(void)
             }
         }
     }
+    if (y11_drm_watchdog_fd < 0)
+        y11_drm_spawn_watchdog(y11_output_list);
     return 0;
 }
 
@@ -351,4 +409,9 @@ void y11_drm_shutdown(void)
         out = next;
     }
     y11_output_list = NULL;
+    /* Let the watchdog know the server exited cleanly. */
+    if (y11_drm_watchdog_fd >= 0) {
+        close(y11_drm_watchdog_fd);
+        y11_drm_watchdog_fd = -1;
+    }
 }
