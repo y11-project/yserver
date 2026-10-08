@@ -20,9 +20,11 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <sys/ioctl.h>
+#include <sys/sysmacros.h>
 #include <sys/vt.h>
 #include <drm/drm.h>
 
@@ -149,6 +151,20 @@ static int y11_session_direct(struct y11_session *s)
     (void)ioctl(s->tty_fd, VT_SETMODE, &vtm);
     (void)signal(SIGUSR1, y11_vt_signal);
     (void)signal(SIGUSR2, y11_vt_signal);
+
+    /* Claim the VT: activate it so the display and the keyboard land
+     * here instead of leaving the user typing into a blind shell. */
+    {
+        struct stat st;
+
+        if (fstat(s->tty_fd, &st) == 0) {
+            int vt = (int)(minor(st.st_rdev));
+
+            if (vt > 0 &&
+                ioctl(s->tty_fd, VT_ACTIVATE, vt) == 0)
+                (void)ioctl(s->tty_fd, VT_WAITACTIVE, vt);
+        }
+    }
     return fd;
 }
 
