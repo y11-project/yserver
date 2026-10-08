@@ -31,8 +31,9 @@ static volatile sig_atomic_t y11_g_running = 1;
 static struct y11_session y11_g_session;
 
 /* Poll map sentinels: client slots are >= 0. */
-#define Y11_MAP_SEAT (-2)
-#define Y11_MAP_DRM  (-3)
+#define Y11_MAP_SEAT  (-2)
+#define Y11_MAP_DRM   (-3)
+#define Y11_MAP_EVDEV (-4)
 
 /* ---- signals --------------------------------------------------------------- */
 
@@ -188,8 +189,8 @@ static void y11_server_accept(struct y11_server *srv)
 
 void y11_server_run(struct y11_server *srv)
 {
-    struct pollfd fds[Y11_MAX_CLIENTS + 3];
-    int map[Y11_MAX_CLIENTS + 3];   /* poll index -> client slot */
+    struct pollfd fds[Y11_MAX_CLIENTS + 3 + Y11_MAX_EVDEV_DEVICES];
+    int map[Y11_MAX_CLIENTS + 3 + Y11_MAX_EVDEV_DEVICES];   /* poll index -> client slot */
 
     while (y11_g_running) {
         nfds_t n = 1;
@@ -213,6 +214,18 @@ void y11_server_run(struct y11_server *srv)
             fds[n].revents = 0;
             map[n] = Y11_MAP_DRM;
             n++;
+        }
+
+        for (i = 0; i < (int)y11_evdev_get_count(); i++) {
+            int dev_fd = y11_evdev_get_fd((size_t)i);
+
+            if (dev_fd >= 0) {
+                fds[n].fd = dev_fd;
+                fds[n].events = POLLIN;
+                fds[n].revents = 0;
+                map[n] = Y11_MAP_EVDEV;
+                n++;
+            }
         }
 
         for (i = 0; i < Y11_MAX_CLIENTS; i++) {
@@ -262,6 +275,11 @@ void y11_server_run(struct y11_server *srv)
             if (map[i] == Y11_MAP_DRM) {
                 /* Page flip completions arrive at VBlank. */
                 y11_drm_handle_events(srv->drm_fd);
+                continue;
+            }
+            if (map[i] == Y11_MAP_EVDEV) {
+                /* Evdev input events (keyboard, mouse, touch). */
+                y11_evdev_handle(&y11_g_session, fds[i].fd);
                 continue;
             }
 
@@ -413,6 +431,7 @@ int main(int argc, char **argv)
         y11_atom_shutdown();
         return EXIT_FAILURE;
     }
+    y11_evdev_init(&y11_g_session);
 
     /*
      * DRI3 render-node access: prefer the session card fd, fall back
@@ -443,6 +462,7 @@ int main(int argc, char **argv)
 
     y11_server_run(&srv);
 
+    y11_evdev_shutdown(&y11_g_session);
     y11_scanout_shutdown();
     y11_drm_shutdown();
     y11_session_shutdown(&y11_g_session);

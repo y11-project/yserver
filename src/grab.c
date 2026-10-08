@@ -175,6 +175,27 @@ void y11_grab_button_release_check(void)
     }
 }
 
+/* Passive key grab ends when all keys are released. */
+void y11_grab_key_release_check(void)
+{
+    if (y11_keyboard_grab.active && y11_keyboard_grab.passive) {
+        const y11_keyboard_t *kbd = y11_input_keyboard();
+        int any_keys = 0;
+        size_t b;
+
+        for (b = 0; b < sizeof(kbd->key_state); b++) {
+            if (kbd->key_state[b] != 0) {
+                any_keys = 1;
+                break;
+            }
+        }
+        if (!any_keys) {
+            memset(&y11_keyboard_grab, 0, sizeof(y11_keyboard_grab));
+            y11_last_grab_time = y11_input_event_time();
+        }
+    }
+}
+
 /*
  * Deliver a device event through an active grab: with owner-events off
  * (the simple case) the grabbing client receives events selected in
@@ -422,6 +443,7 @@ static int y11_grab_register_passive(struct y11_client *c,
     p->owner_events = pkt[1] != 0;
     p->is_key = is_key != 0;
     if (is_key) {
+        p->event_mask = Y11_MASK_KEY_PRESS | Y11_MASK_KEY_RELEASE;
         p->pointer_mode = body[7];
         p->keyboard_mode = body[8];
     } else {

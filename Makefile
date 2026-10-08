@@ -25,7 +25,7 @@ FreeBSD_SEATLIB = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
 HDRS = include/y11.h include/y11_wire.h include/y11_drm.h include/libseat.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o
+OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -104,6 +104,9 @@ src/selection.o: src/selection.c $(HDRS)
 
 src/xrender.o: src/xrender.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/xrender.c -o $@
+
+src/evdev.o: src/evdev.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/evdev.c -o $@
 
 clean:
 	rm -f $(OBJS) y11

@@ -45,6 +45,8 @@ static void y11_vt_signal(int sig)
         y11_vt_switch_back = 1;
 }
 
+static struct y11_session *y11_active_session;
+
 static void y11_session_enable(struct libseat *seat, void *userdata)
 {
     struct y11_session *s = userdata;
@@ -58,6 +60,7 @@ static void y11_session_enable(struct libseat *seat, void *userdata)
     if (s->drm_card_fd >= 0 && !drmIsMaster(s->drm_card_fd))
         (void)drmSetMaster(s->drm_card_fd);
     y11_scanout_restore();
+    y11_evdev_rescan(s);
 }
 
 static void y11_session_disable(struct libseat *seat, void *userdata)
@@ -231,6 +234,7 @@ int y11_session_init(struct y11_session *s)
         if (y11_session_direct(s) >= 0) {
             fprintf(stderr, "y11: no seat manager; took the console"
                     " with VT_PROCESS switching\n");
+            y11_active_session = s;
             return 0;
         }
         fprintf(stderr, "y11: no seat available (%s), running headless\n",
@@ -254,6 +258,7 @@ int y11_session_init(struct y11_session *s)
         s->seat_fd = -1;
         return -1;
     }
+    y11_active_session = s;
     return 0;
 }
 
@@ -322,4 +327,26 @@ void y11_session_shutdown(struct y11_session *s)
         s->seat = NULL;
     }
     s->seat_fd = -1;
+    if (y11_active_session == s)
+        y11_active_session = NULL;
+}
+
+int y11_session_switch_vt(struct y11_session *s, int vt)
+{
+    if (s == NULL || vt <= 0)
+        return -1;
+    if (y11_debug)
+        fprintf(stderr, "y11: requesting switch to VT %d\n", vt);
+    if (s->seat != NULL)
+        return libseat_switch_session(s->seat, vt);
+    if (s->tty_fd >= 0)
+        return ioctl(s->tty_fd, VT_ACTIVATE, vt);
+    return -1;
+}
+
+int y11_session_request_vt_switch(int vt)
+{
+    if (y11_active_session != NULL)
+        return y11_session_switch_vt(y11_active_session, vt);
+    return -1;
 }

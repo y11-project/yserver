@@ -105,6 +105,14 @@ static const struct {
     { 68,  { 0xffbf, 0xffbf } },            /* F2 */
     { 69,  { 0xffc0, 0xffc0 } },            /* F3 */
     { 70,  { 0xffc1, 0xffc1 } },            /* F4 */
+    { 71,  { 0xffc2, 0xffc2 } },            /* F5 */
+    { 72,  { 0xffc3, 0xffc3 } },            /* F6 */
+    { 73,  { 0xffc4, 0xffc4 } },            /* F7 */
+    { 74,  { 0xffc5, 0xffc5 } },            /* F8 */
+    { 75,  { 0xffc6, 0xffc6 } },            /* F9 */
+    { 76,  { 0xffc7, 0xffc7 } },            /* F10 */
+    { 95,  { 0xffc8, 0xffc8 } },            /* F11 */
+    { 96,  { 0xffc9, 0xffc9 } },            /* F12 */
     { 105, { 0xffe4, 0xffe4 } },            /* Control_R */
     { 108, { 0xffea, 0xffea } },            /* Alt_R */
     { 111, { 0xff52, 0xff52 } },            /* Up */
@@ -473,17 +481,34 @@ void y11_input_key(int press, uint8_t keycode)
         y11_keyboard_state.key_state[byte] &= (uint8_t)~bit;
     y11_input_update_modifiers(keycode, press);
 
+    if (press && (y11_keyboard_state.modifier_mask & 0x0004) != 0 &&
+        (y11_keyboard_state.modifier_mask & 0x0008) != 0) {
+        int vt = 0;
+
+        if (keycode >= 67 && keycode <= 76)
+            vt = keycode - 66; /* F1=67 -> 1, ..., F10=76 -> 10 */
+        else if (keycode == 95)
+            vt = 11;           /* F11 */
+        else if (keycode == 96)
+            vt = 12;           /* F12 */
+
+        if (vt > 0 && y11_session_request_vt_switch(vt) == 0)
+            return;
+    }
+
     {
         const y11_grab_t *grab = y11_grab_keyboard_active();
 
         if (grab != NULL) {
             /* An active keyboard grab owns all keystrokes. */
-            if (press)
+            if (press) {
                 y11_grab_deliver(grab, Y11_EVT_KEY_PRESS, keycode,
                                  Y11_MASK_KEY_PRESS);
-            else
+            } else {
                 y11_grab_deliver(grab, Y11_EVT_KEY_RELEASE, keycode,
                                  Y11_MASK_KEY_RELEASE);
+                y11_grab_key_release_check();
+            }
             return;
         }
     }

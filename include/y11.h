@@ -748,6 +748,7 @@ const y11_grab_t *y11_grab_keyboard_active(void);
 struct y11_client *y11_grab_match_button(uint8_t button, uint16_t state);
 struct y11_client *y11_grab_match_key(uint8_t key, uint16_t state);
 void y11_grab_button_release_check(void);
+void y11_grab_key_release_check(void);
 void y11_grab_confine(int16_t *x, int16_t *y);
 void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
                       uint32_t mask_bit);
@@ -866,6 +867,24 @@ int  y11_input_req_get_keyboard_mapping(struct y11_client *c,
 int  y11_input_req_change_keyboard_mapping(struct y11_client *c,
                                            const uint8_t *pkt, size_t len,
                                            size_t data_off);
+
+/* ---- src/evdev.c ----------------------------------------------------------------- */
+
+#define Y11_MAX_EVDEV_DEVICES 32
+
+struct y11_session;
+
+void   y11_evdev_init(struct y11_session *s);
+void   y11_evdev_rescan(struct y11_session *s);
+void   y11_evdev_shutdown(struct y11_session *s);
+size_t y11_evdev_get_count(void);
+int    y11_evdev_get_fd(size_t index);
+void   y11_evdev_handle(struct y11_session *s, int fd);
+
+/* ---- session vt switching (src/session.c) ---------------------------------------- */
+
+int    y11_session_switch_vt(struct y11_session *s, int vt);
+int    y11_session_request_vt_switch(int vt);
 
 /* ---- src/events.c (hit-testing) --------------------------------------------------- */
 
