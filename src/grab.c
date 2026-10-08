@@ -420,12 +420,27 @@ static int y11_grab_register_passive(struct y11_client *c,
         }
     }
 
-    /* Duplicate registrations by the same client are BadAccess. */
+    /* An existing grab on the same button/key and modifier by another client is BadAccess.
+     * An existing grab by the same client is overridden. */
     for (q = y11_passive_grabs; q != NULL; q = q->next) {
-        if (q->client == c && q->window == window &&
-            q->modifiers == modifiers && q->button == button &&
-            q->key == key && q->is_key == (is_key != 0)) {
-            y11_dispatch_send_error(c, Y11_ERR_BAD_ACCESS, window, pkt[0]);
+        if (q->window == window && q->modifiers == modifiers &&
+            q->button == button && q->key == key &&
+            q->is_key == (is_key != 0)) {
+            if (q->client != c) {
+                y11_dispatch_send_error(c, Y11_ERR_BAD_ACCESS, window, pkt[0]);
+                return 0;
+            }
+            q->owner_events = pkt[1] != 0;
+            if (is_key) {
+                q->event_mask = Y11_MASK_KEY_PRESS | Y11_MASK_KEY_RELEASE;
+                q->pointer_mode = body[7];
+                q->keyboard_mode = body[8];
+            } else {
+                q->event_mask = y11_wire_get16(body + 4);
+                q->confine_to = y11_wire_get32(body + 8);
+                q->pointer_mode = body[6];
+                q->keyboard_mode = body[7];
+            }
             return 0;
         }
     }

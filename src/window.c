@@ -586,7 +586,7 @@ static void y11_window_parse_cwa(uint32_t mask, const uint8_t *vals,
  * Apply the MapWindow semantics to one window: honor substructure
  * redirection, transition the map state, and notify listeners.
  */
-static int y11_window_do_map(struct y11_window *win)
+static int y11_window_do_map(struct y11_window *win, struct y11_client *c)
 {
     if (win->map_state != Y11_MAP_STATE_UNMAPPED)
         return 0;               /* already mapped (viewable or unviewable) */
@@ -594,6 +594,7 @@ static int y11_window_do_map(struct y11_window *win)
     /* Substructure redirection: the window manager decides. */
     if (win->parent != NULL &&
         win->parent->substructure_redirect_client != NULL &&
+        win->parent->substructure_redirect_client != c &&
         !win->override_redirect) {
         y11_event_send_map_request(win);
         return 0;
@@ -1025,7 +1026,8 @@ int y11_window_req_circulate(struct y11_client *c, const uint8_t *pkt,
     if (!y11_circulate_occluded(child, direction == 0))
         return 0;
 
-    if (win->substructure_redirect_client != NULL) {
+    if (win->substructure_redirect_client != NULL &&
+        win->substructure_redirect_client != c) {
         /* The window manager decides: hand it the child and place. */
         y11_event_send_circulate_request(win, child, direction);
         return 0;
@@ -1183,7 +1185,6 @@ int y11_window_req_map(struct y11_client *c, const uint8_t *pkt,
     uint32_t window_id;
     struct y11_window *win;
 
-    (void)c;
     if (len - data_off != 4u)
         return y11_window_bad_length(c, pkt[0]);
     window_id = y11_wire_get32(body + 0);
@@ -1192,7 +1193,7 @@ int y11_window_req_map(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_WINDOW, window_id, pkt[0]);
         return 0;
     }
-    return y11_window_do_map(win);
+    return y11_window_do_map(win, c);
 }
 
 /* MapSubwindows (opcode 9): map every unmapped child, bottom to top. */
@@ -1203,7 +1204,6 @@ int y11_window_req_map_subwindows(struct y11_client *c, const uint8_t *pkt,
     uint32_t window_id;
     struct y11_window *win, *child;
 
-    (void)c;
     if (len - data_off != 4u)
         return y11_window_bad_length(c, pkt[0]);
     window_id = y11_wire_get32(body + 0);
@@ -1213,7 +1213,7 @@ int y11_window_req_map_subwindows(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
     for (child = win->first_child; child != NULL; child = child->next_sibling)
-        y11_window_do_map(child);
+        y11_window_do_map(child, c);
     return 0;
 }
 
@@ -1302,6 +1302,7 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
      */
     if (win->parent != NULL &&
         win->parent->substructure_redirect_client != NULL &&
+        win->parent->substructure_redirect_client != c &&
         !win->override_redirect) {
         y11_event_send_configure_request(win, value_mask, x, y, width,
                                          height, border_width, sibling,
