@@ -340,6 +340,7 @@ enum y11_req_opcode {
     Y11_REQ_CREATE_CURSOR            = 93,
     Y11_REQ_CREATE_GLYPH_CURSOR      = 94,
     Y11_REQ_FREE_CURSOR              = 95,
+    Y11_REQ_RECOLOR_CURSOR           = 96,
     Y11_REQ_CREATE_PIXMAP            = 53,
     Y11_REQ_FREE_PIXMAP              = 54,
     Y11_REQ_CREATE_GC                = 55,

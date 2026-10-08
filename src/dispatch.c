@@ -886,16 +886,19 @@ static int y11_dispatch_create_cursor(struct y11_client *c,
     const uint8_t *body = pkt + data_off;
     uint32_t cid, source, mask;
 
-    if (len - data_off != 24u)  /* cid, pixmaps, colors, hotspot */
+    if (len - data_off != 28u)  /* cid, pixmaps, colors, hotspot */
         return y11_dispatch_bad_length(c, pkt[0]);
 
     cid = y11_wire_get32(body + 0);
     source = y11_wire_get32(body + 4);
     mask = y11_wire_get32(body + 8);
-    (void)mask;
 
     if (y11_resource_get(source, Y11_RESOURCE_PIXMAP) == NULL) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP, source, pkt[0]);
+        return 0;
+    }
+    if (mask != 0 && y11_resource_get(mask, Y11_RESOURCE_PIXMAP) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP, mask, pkt[0]);
         return 0;
     }
     if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
@@ -922,6 +925,25 @@ static int y11_dispatch_free_cursor(struct y11_client *c,
         return 0;
     }
     y11_resource_remove(cid);
+    return 0;                   /* no reply */
+}
+
+/* RecolorCursor (96). */
+static int y11_dispatch_recolor_cursor(struct y11_client *c,
+                                      const uint8_t *pkt, size_t len,
+                                      size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t cid;
+
+    if (len - data_off != 16u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    cid = y11_wire_get32(body + 0);
+    if (y11_resource_get(cid, Y11_RESOURCE_CURSOR) == NULL) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR, cid, pkt[0]);
+        return 0;
+    }
     return 0;                   /* no reply */
 }
 
@@ -1313,6 +1335,8 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         return y11_dispatch_create_glyph_cursor(c, pkt, len, data_off);
     case Y11_REQ_FREE_CURSOR:
         return y11_dispatch_free_cursor(c, pkt, len, data_off);
+    case Y11_REQ_RECOLOR_CURSOR:
+        return y11_dispatch_recolor_cursor(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_COLOR:
         return y11_dispatch_alloc_color(c, pkt, len, data_off);
     case Y11_REQ_ALLOC_NAMED_COLOR:
@@ -1456,6 +1480,19 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
                 y11_dispatch_send_reply(c, &vr, sizeof(vr));
                 return 0;
             }
+            /* SelectCursorInput (3): window, eventMask */
+            if (pkt[1] == 3)
+                return 0;
+            /* GetCursorImage (4): return 32-byte reply with cursor coords, 0x0 size */
+            if (pkt[1] == 4) {
+                uint8_t rep[32];
+                memset(rep, 0, sizeof(rep));
+                rep[0] = 1;
+                y11_wire_put16(rep + 8, (uint16_t)y11_input_pointer()->root_x);
+                y11_wire_put16(rep + 10, (uint16_t)y11_input_pointer()->root_y);
+                y11_dispatch_send_reply(c, rep, sizeof(rep));
+                return 0;
+            }
             /* SetCursorName (23): cursor, nbytes, name. */
             if (pkt[1] == 23 && len >= 12u) {
                 uint32_t cursor = y11_wire_get32(pkt + data_off);
@@ -1476,17 +1513,32 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
                 rep[0] = 1;
                 if (name != NULL) {
                     size_t slen = strlen(name);
+                    size_t padded = y11_wire_pad4((uint32_t)slen);
 
+                    y11_wire_put32(rep + 4, (uint32_t)(padded / 4u));
                     y11_wire_put32(rep + 8, 0);  /* no atom: unnamed */
-                    y11_wire_put32(rep + 12, (uint32_t)slen);
+                    y11_wire_put16(rep + 12, (uint16_t)slen);
                     y11_dispatch_send_reply(c, rep, sizeof(rep));
                     y11_client_send(c, (const uint8_t *)name, slen);
+                    if (padded > slen) {
+                        static const uint8_t pad[4] = { 0 };
+                        y11_client_send(c, pad, padded - slen);
+                    }
+                } else if (cursor == 0 || y11_resource_get(cursor, Y11_RESOURCE_CURSOR) != NULL) {
+                    /* Valid cursor without a name: atom=None, nbytes=0 */
+                    y11_dispatch_send_reply(c, rep, sizeof(rep));
                 } else {
                     y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR,
                                             cursor, pkt[0]);
                 }
                 return 0;
             }
+            /* ChangeCursor (26), ChangeCursorByName (27), HideCursor (29), ShowCursor (30) */
+            if (pkt[1] == 26 || pkt[1] == 27 || pkt[1] == 29 || pkt[1] == 30)
+                return 0;
+            /* ChangeSaveSet (1), SelectSelectionInput (2) */
+            if (pkt[1] == 1 || pkt[1] == 2)
+                return 0;
             y11_dispatch_send_error(c, Y11_ERR_BAD_REQUEST, pkt[1],
                                     pkt[0]);
             return 0;
