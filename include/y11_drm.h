@@ -68,6 +68,7 @@ typedef struct y11_session {
     int drm_device_id;          /* assigned by libseat_open_device */
     int tty_fd;                 /* console tty (direct path only) */
     bool active;                /* false while switched away from the VT */
+    bool pending_ack;           /* disable ack deferred out of the callback */
 } y11_session_t;
 
 /* ---- src/session.c -------------------------------------------------------------- */

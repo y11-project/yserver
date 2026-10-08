@@ -224,8 +224,13 @@ void y11_server_run(struct y11_server *srv)
 
         ready = poll(fds, n, -1);
         if (ready < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
+                /* A signal (VT switch and friends) may only set flags
+                 * inside libseat; drive the seat dispatch before
+                 * repolling or the switch-back is never handled. */
+                y11_session_dispatch(&y11_g_session);
                 continue;       /* signal: re-check y11_g_running */
+            }
             perror("y11: poll");
             break;
         }

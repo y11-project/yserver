@@ -64,6 +64,7 @@ static void y11_session_disable(struct libseat *seat, void *userdata)
 {
     struct y11_session *s = userdata;
 
+    (void)seat;
     s->active = false;
     if (y11_debug)
         fprintf(stderr, "y11: seat disabled (VT switch away)\n");
@@ -75,8 +76,13 @@ static void y11_session_disable(struct libseat *seat, void *userdata)
     if (s->drm_card_fd >= 0 && drmIsMaster(s->drm_card_fd))
         (void)drmDropMaster(s->drm_card_fd);
 
-    /* Acknowledge the switch; failure to do so loses the devices. */
-    (void)libseat_disable_seat(seat);
+    /*
+     * The disable ack must go out AFTER the dispatch returns: calling
+     * back into libseat from inside its own callback nests reads on
+     * the seat connection, the ack never completes, and the seat is
+     * then unable to re-enable the client on switch-back.
+     */
+    s->pending_ack = true;
 }
 
 static const struct libseat_seat_listener y11_seat_listener = {
@@ -192,6 +198,25 @@ int y11_session_init(struct y11_session *s)
         return -1;
     }
 
+    /*
+     * Activate the controlling VT BEFORE the seat binds: the seat
+     * session is assigned for the VT that is active right now, and it
+     * has to be the tty y11 owns or the seat immediately disables the
+     * session again (active VT elsewhere) and the display never takes.
+     */
+    {
+        struct stat st;
+
+        if (fstat(s->tty_fd, &st) == 0) {
+            int vt = (int)minor(st.st_rdev);
+
+            if (vt > 0) {
+                (void)ioctl(s->tty_fd, VT_ACTIVATE, vt);
+                (void)ioctl(s->tty_fd, VT_WAITACTIVE, vt);
+            }
+        }
+    }
+
     s->seat = libseat_open_seat(&y11_seat_listener, s);
     if (s->seat == NULL) {
         if (y11_session_direct(s) >= 0) {
@@ -227,6 +252,11 @@ void y11_session_dispatch(struct y11_session *s)
 {
     if (s->seat != NULL) {
         (void)libseat_dispatch(s->seat, 0);
+        /* Acknowledge a switch-away once the dispatch is done. */
+        if (s->pending_ack) {
+            s->pending_ack = false;
+            (void)libseat_disable_seat(s->seat);
+        }
         return;
     }
 
