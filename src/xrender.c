@@ -885,6 +885,106 @@ static int y11_render_composite_glyphs(struct y11_client *c,
     return 0;                   /* no reply */
 }
 
+/*
+ * Trapezoids (10): op, src, dst, mask format, src origin, then a
+ * LISTofTRAPEZOID (40 bytes each: top/bottom and the left/right
+ * edges as fixed-point lines).  Rasterized hard-edged with the
+ * source picture's color - coverage within the trapezoid is 1.
+ */
+static int y11_render_trapezoids(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len, size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint8_t op;
+    uint32_t src_id, dst_id;
+    struct y11_render_picture *src, *dst;
+    uint32_t color;
+    size_t ntraps, i;
+
+    if (len - data_off < 24u || ((len - data_off - 24u) % 40u) != 0u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    op = body[0];
+    src_id = y11_wire_get32(body + 4);
+    dst_id = y11_wire_get32(body + 8);
+    src = y11_render_picture_find(src_id);
+    dst = y11_render_picture_find(dst_id);
+    if (src == NULL || dst == NULL) {
+        y11_dispatch_send_error(c, (uint8_t)(Y11_RENDER_FIRST_ERROR +
+                                             Y11_RERR_BAD_PICTURE),
+                                src == NULL ? src_id : dst_id, pkt[0]);
+        return 0;
+    }
+    if (dst->drawable == NULL || dst->drawable->pixels == NULL)
+        return 0;
+    if (src->drawable != NULL && src->drawable->pixels != NULL &&
+        src->drawable->width == 1 && src->drawable->height == 1)
+        color = src->drawable->pixels[0] & 0xffffffu;
+    else
+        color = src->color & 0xffffffu;
+
+    ntraps = (len - data_off - 24u) / 40u;
+    for (i = 0; i < ntraps; i++) {
+        const uint8_t *t = body + 24u + i * 40u;
+        int32_t top = (int32_t)y11_wire_get32(t + 0);       /* 16.16 */
+        int32_t bottom = (int32_t)y11_wire_get32(t + 4);
+        int32_t lx1 = (int32_t)y11_wire_get32(t + 8);       /* left.p1.x */
+        int32_t ly1 = (int32_t)y11_wire_get32(t + 12);      /* left.p1.y */
+        int32_t lx2 = (int32_t)y11_wire_get32(t + 16);      /* left.p2.x */
+        int32_t ly2 = (int32_t)y11_wire_get32(t + 20);      /* left.p2.y */
+        int32_t rx1 = (int32_t)y11_wire_get32(t + 24);      /* right.p1.x */
+        int32_t ry1 = (int32_t)y11_wire_get32(t + 28);
+        int32_t rx2 = (int32_t)y11_wire_get32(t + 32);      /* right.p2.x */
+        int32_t ry2 = (int32_t)y11_wire_get32(t + 36);
+        y11_drawable_t *d = dst->drawable;
+        int32_t row;
+
+        if (bottom <= top)
+            continue;
+        for (row = (top + 0xffff) >> 16; row < ((bottom + 0xffff) >> 16);
+             row++) {
+            int32_t y16 = row << 16;    /* sample at the row's top */
+            int32_t lx, rx, col;
+
+            if (y16 < top || y16 >= bottom)
+                continue;
+            /* Interpolate each edge at this scanline. */
+            lx = (ly2 != ly1) ? lx1 + (int32_t)(((int64_t)(lx2 - lx1) *
+                     (int64_t)(y16 - ly1)) / (int64_t)(ly2 - ly1)) : lx1;
+            rx = (ry2 != ry1) ? rx1 + (int32_t)(((int64_t)(rx2 - rx1) *
+                     (int64_t)(y16 - ry1)) / (int64_t)(ry2 - ry1)) : rx1;
+            if (rx < lx) {
+                int32_t tmp = lx;
+
+                lx = rx;
+                rx = tmp;
+            }
+            for (col = (lx + 0xffff) >> 16; col < ((rx + 0xffff) >> 16);
+                 col++) {
+                size_t po;
+
+                if (col < 0 || col >= (int32_t)d->width || row < 0 ||
+                    row >= (int32_t)d->height)
+                    continue;
+                if (y11_render_clipped(dst, col, row))
+                    continue;
+                po = (size_t)row * (d->stride / 4u) + (size_t)col;
+                if (op == Y11_PICTOP_CLEAR) {
+                    d->pixels[po] = 0;
+                } else if (op == Y11_PICTOP_SRC) {
+                    d->pixels[po] = color | 0xff000000u;
+                } else {
+                    d->pixels[po] = y11_render_blend(d->pixels[po], color,
+                                                     255u, 255u);
+                }
+            }
+        }
+    }
+    y11_damage_drawn(dst->drawable, 0, 0, (int32_t)dst->drawable->width,
+                     (int32_t)dst->drawable->height);
+    return 0;                   /* no reply */
+}
+
 /* ---- dispatcher ------------------------------------------------------------------- */
 
 int y11_render_req(struct y11_client *c, const uint8_t *pkt, size_t len,
@@ -910,6 +1010,8 @@ int y11_render_req(struct y11_client *c, const uint8_t *pkt, size_t len,
         return y11_render_free_glyph_set(c, pkt, len, data_off);
     case Y11_RENDER_ADD_GLYPHS:
         return y11_render_add_glyphs(c, pkt, len, data_off);
+    case 10:                    /* RenderTrapezoids */
+        return y11_render_trapezoids(c, pkt, len, data_off);
     case Y11_RENDER_COMPOSITE_GLYPHS8:
         return y11_render_composite_glyphs(c, pkt, len, data_off, 1);
     case Y11_RENDER_COMPOSITE_GLYPHS16:
