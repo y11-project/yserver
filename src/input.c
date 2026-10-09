@@ -14,6 +14,7 @@
  * has selected the right event mask.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -476,6 +477,11 @@ void y11_input_key(int press, uint8_t keycode)
 
     if (keycode < 8)
         return;                 /* X11 keycodes start at 8 */
+
+    if (y11_debug)
+        fprintf(stderr, "y11: input key %s kc=%u mod=0x%x\n",
+                press ? "press" : "release", keycode,
+                y11_keyboard_state.modifier_mask);
 
     if (press)
         y11_keyboard_state.key_state[byte] |= bit;
