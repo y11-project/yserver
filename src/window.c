@@ -494,6 +494,8 @@ int y11_window_init(void)
     root->map_state = Y11_MAP_STATE_VIEWABLE;
     root->override_redirect = false;
     root->background_pixel = 0;
+    root->background_pixmap = 0;
+    root->has_bg_pixel = true;
 
     if (y11_resource_add(root->id, Y11_RESOURCE_WINDOW, root) != 0) {
         free(root);
@@ -524,9 +526,11 @@ void y11_window_shutdown(void)
 
 struct y11_cwa_values {
     uint32_t background_pixel;
+    yid_t    background_pixmap;
     uint32_t border_pixel;
     uint32_t event_mask;
-    int have_background;        /* a background was explicitly specified */
+    int have_background;        /* a background pixel was explicitly specified */
+    int have_bg_pixmap;         /* a background pixmap was explicitly specified */
     int have_border;
     int have_event_mask;
     int override_redirect;
@@ -551,8 +555,9 @@ static void y11_window_parse_cwa(uint32_t mask, const uint8_t *vals,
             uint32_t v = y11_wire_get32(vals);
             vals += 4;
             switch (i) {
-            case 0:             /* background-pixmap: None or ParentRelative */
-                out->have_background = (v == 1u);  /* ParentRelative counts */
+            case 0:             /* background-pixmap */
+                out->background_pixmap = v;
+                out->have_bg_pixmap = 1;
                 break;
             case 1:             /* background-pixel */
                 out->background_pixel = v;
@@ -576,6 +581,94 @@ static void y11_window_parse_cwa(uint32_t mask, const uint8_t *vals,
             default:            /* accepted and ignored (headless) */
                 break;
             }
+        }
+    }
+}
+
+/*
+ * Fill a window rectangle with its background (pixmap or pixel).
+ * If background_pixmap is ParentRelative (1), walk up ancestor windows.
+ */
+static void y11_window_fill_background(struct y11_window *win,
+                                       int32_t x, int32_t y,
+                                       uint32_t w, uint32_t h)
+{
+    struct y11_window *src;
+    int32_t off_x = 0;
+    int32_t off_y = 0;
+
+    if (win == NULL || win->drawable.pixels == NULL || w == 0 || h == 0)
+        return;
+
+    /* Clip to window drawable boundaries */
+    if (x < 0) {
+        if ((uint32_t)(-x) >= w)
+            return;
+        w -= (uint32_t)(-x);
+        x = 0;
+    }
+    if (y < 0) {
+        if ((uint32_t)(-y) >= h)
+            return;
+        h -= (uint32_t)(-y);
+        y = 0;
+    }
+    if (x + (int32_t)w > (int32_t)win->drawable.width)
+        w = (uint32_t)((int32_t)win->drawable.width - x);
+    if (y + (int32_t)h > (int32_t)win->drawable.height)
+        h = (uint32_t)((int32_t)win->drawable.height - y);
+    if (w == 0 || h == 0)
+        return;
+
+    /* Follow ParentRelative background chain */
+    src = win;
+    while (src != NULL && src->background_pixmap == 1u) {
+        off_x += src->x;
+        off_y += src->y;
+        src = src->parent;
+    }
+
+    if (src != NULL && src->background_pixmap > 1u) {
+        struct y11_pixmap *pm = y11_resource_get(src->background_pixmap,
+                                                Y11_RESOURCE_PIXMAP);
+        if (pm != NULL && pm->base.pixels != NULL &&
+            pm->base.width > 0 && pm->base.height > 0) {
+            uint32_t pm_w = pm->base.width;
+            uint32_t pm_h = pm->base.height;
+            size_t pm_stride_words = pm->base.stride / 4u;
+            size_t win_stride_words = win->drawable.stride / 4u;
+            int32_t row, col;
+
+            for (row = y; row < y + (int32_t)h; row++) {
+                int32_t py = (off_y + row) % (int32_t)pm_h;
+                const uint32_t *pm_row;
+                uint32_t *win_row;
+
+                if (py < 0)
+                    py += (int32_t)pm_h;
+                pm_row = pm->base.pixels + (size_t)py * pm_stride_words;
+                win_row = win->drawable.pixels + (size_t)row * win_stride_words;
+
+                for (col = x; col < x + (int32_t)w; col++) {
+                    int32_t px = (off_x + col) % (int32_t)pm_w;
+                    if (px < 0)
+                        px += (int32_t)pm_w;
+                    win_row[col] = pm_row[px];
+                }
+            }
+            return;
+        }
+    }
+
+    if (src != NULL && (src->has_bg_pixel || src->background_pixel != 0 || src->background_pixmap == 0)) {
+        uint32_t bg = src->background_pixel;
+        size_t win_stride_words = win->drawable.stride / 4u;
+        int32_t row, col;
+
+        for (row = y; row < y + (int32_t)h; row++) {
+            uint32_t *win_row = win->drawable.pixels + (size_t)row * win_stride_words;
+            for (col = x; col < x + (int32_t)w; col++)
+                win_row[col] = bg;
         }
     }
 }
@@ -606,8 +699,11 @@ static int y11_window_do_map(struct y11_window *win, struct y11_client *c)
     y11_event_send_map(win);
     y11_window_propagate_map_state(win,
                                    win->map_state == Y11_MAP_STATE_VIEWABLE);
-    if (win->map_state == Y11_MAP_STATE_VIEWABLE)
+    if (win->map_state == Y11_MAP_STATE_VIEWABLE) {
+        if (win->background_pixmap != 0 || win->has_bg_pixel || win->background_pixel != 0)
+            y11_window_fill_background(win, 0, 0, win->width, win->height);
         y11_damage_mapped(win, 0, 0, win->width, win->height);
+    }
     return 0;
 }
 
@@ -706,8 +802,8 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
 
     /* InputOnly windows: no depth, no visuals, no background or border. */
     if (wclass == Y11_WINDOW_CLASS_INPUT_ONLY &&
-        (depth != 0 || vals.have_background || vals.have_border ||
-         (visual != 0 && visual != parent->visual_id))) {
+        (depth != 0 || vals.have_background || vals.have_bg_pixmap ||
+         vals.have_border || (visual != 0 && visual != parent->visual_id))) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, 0, pkt[0]);
         return 0;
     }
@@ -733,6 +829,23 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
     } else {
         depth = 0;
         visual = parent->visual_id;
+    }
+
+    if (vals.have_bg_pixmap) {
+        if (vals.background_pixmap > 1u) {
+            struct y11_pixmap *pm = y11_resource_get(vals.background_pixmap,
+                                                     Y11_RESOURCE_PIXMAP);
+            if (pm == NULL) {
+                y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP,
+                                        vals.background_pixmap, pkt[0]);
+                return 0;
+            }
+        } else if (vals.background_pixmap == 1u) {
+            if (depth != parent->depth) {
+                y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, 0, pkt[0]);
+                return 0;
+            }
+        }
     }
 
     /* The id must be unused and fall in this client's resource range. */
@@ -762,7 +875,20 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
     win->override_redirect = vals.have_override
                                  ? (vals.override_redirect != 0)
                                  : false;
-    win->background_pixel = vals.background_pixel;
+    if (vals.have_bg_pixmap) {
+        win->background_pixmap = vals.background_pixmap;
+        win->has_bg_pixel = false;
+    }
+    if (vals.have_background) {
+        win->background_pixel = vals.background_pixel;
+        win->has_bg_pixel = true;
+        win->background_pixmap = 0;
+    }
+    if (!vals.have_bg_pixmap && !vals.have_background) {
+        win->background_pixel = 0;
+        win->has_bg_pixel = true;
+        win->background_pixmap = 0;
+    }
     win->border_pixel = vals.border_pixel;
 
     if (y11_resource_add(win->id, Y11_RESOURCE_WINDOW, win) != 0) {
@@ -835,13 +961,34 @@ int y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
     y11_window_parse_cwa(value_mask, body + 8, &vals);
 
     if (win->window_class == Y11_WINDOW_CLASS_INPUT_ONLY &&
-        (vals.have_background || vals.have_border)) {
+        (vals.have_background || vals.have_bg_pixmap || vals.have_border)) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, 0, pkt[0]);
         return 0;
     }
 
-    if (vals.have_background)
+    if (vals.have_bg_pixmap) {
+        if (vals.background_pixmap > 1u) {
+            struct y11_pixmap *pm = y11_resource_get(vals.background_pixmap,
+                                                     Y11_RESOURCE_PIXMAP);
+            if (pm == NULL) {
+                y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP,
+                                        vals.background_pixmap, pkt[0]);
+                return 0;
+            }
+        } else if (vals.background_pixmap == 1u) {
+            if (win->parent == NULL || win->depth != win->parent->depth) {
+                y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, 0, pkt[0]);
+                return 0;
+            }
+        }
+        win->background_pixmap = vals.background_pixmap;
+        win->has_bg_pixel = false;
+    }
+    if (vals.have_background) {
         win->background_pixel = vals.background_pixel;
+        win->has_bg_pixel = true;
+        win->background_pixmap = 0;
+    }
     if (vals.have_border)
         win->border_pixel = vals.border_pixel;
     if (vals.have_override)
@@ -1084,8 +1231,6 @@ int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
         return 0;               /* nothing to clear */
 
     {
-        int32_t col, row;
-
         if (x < 0) {
             if ((uint32_t)(-x) >= w)
                 return 0;
@@ -1103,11 +1248,7 @@ int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
         if (y + (int32_t)h > (int32_t)win->drawable.height)
             h = (uint32_t)((int32_t)win->drawable.height - y);
 
-        for (row = y; row < y + (int32_t)h; row++) {
-            for (col = x; col < x + (int32_t)w; col++)
-                win->drawable.pixels[(size_t)row * (win->drawable.stride / 4u) +
-                                     (size_t)col] = win->background_pixel;
-        }
+        y11_window_fill_background(win, x, y, w, h);
     }
 
     if (exposures != 0)

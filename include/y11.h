@@ -543,6 +543,8 @@ struct y11_window {
     y11_map_state_t     map_state;
     bool                override_redirect;
     uint32_t            background_pixel;
+    yid_t               background_pixmap;  /* None (0), ParentRelative (1), or pixmap */
+    bool                has_bg_pixel;
     uint32_t            border_pixel;
 
     /* Event subscriptions */
