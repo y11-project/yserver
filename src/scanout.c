@@ -20,9 +20,15 @@
 #include "y11_drm.h"
 
 static y11_drawable_t *y11_scanout_root;
-static bool y11_scanout_dirty;
-static int32_t y11_dirty_x, y11_dirty_y;
-static uint32_t y11_dirty_w, y11_dirty_h;
+struct y11_scanout_damage {
+    int32_t x;
+    int32_t y;
+    uint32_t w;
+    uint32_t h;
+    bool dirty;
+};
+
+static struct y11_scanout_damage y11_buf_dirty[2];
 
 /* Hardware cursor (legacy KMS API, ARGB 64x64). */
 static uint32_t y11_cursor_handle;
@@ -126,6 +132,7 @@ void y11_scanout_mark_dirty(int32_t x, int32_t y, uint32_t w, uint32_t h)
 {
     int32_t x2 = x + (int32_t)w;
     int32_t y2 = y + (int32_t)h;
+    int b;
 
     if (y11_scanout_root == NULL)
         return;
@@ -140,26 +147,28 @@ void y11_scanout_mark_dirty(int32_t x, int32_t y, uint32_t w, uint32_t h)
     if (x >= x2 || y >= y2)
         return;
 
-    if (!y11_scanout_dirty) {
-        y11_dirty_x = x;
-        y11_dirty_y = y;
-        y11_dirty_w = (uint32_t)(x2 - x);
-        y11_dirty_h = (uint32_t)(y2 - y);
-        y11_scanout_dirty = true;
-    } else {
-        int32_t ox2 = y11_dirty_x + (int32_t)y11_dirty_w;
-        int32_t oy2 = y11_dirty_y + (int32_t)y11_dirty_h;
+    for (b = 0; b < 2; b++) {
+        if (!y11_buf_dirty[b].dirty) {
+            y11_buf_dirty[b].x = x;
+            y11_buf_dirty[b].y = y;
+            y11_buf_dirty[b].w = (uint32_t)(x2 - x);
+            y11_buf_dirty[b].h = (uint32_t)(y2 - y);
+            y11_buf_dirty[b].dirty = true;
+        } else {
+            int32_t ox2 = y11_buf_dirty[b].x + (int32_t)y11_buf_dirty[b].w;
+            int32_t oy2 = y11_buf_dirty[b].y + (int32_t)y11_buf_dirty[b].h;
 
-        if (x < y11_dirty_x)
-            y11_dirty_x = x;
-        if (y < y11_dirty_y)
-            y11_dirty_y = y;
-        if (x2 > ox2)
-            ox2 = x2;
-        if (y2 > oy2)
-            oy2 = y2;
-        y11_dirty_w = (uint32_t)(ox2 - y11_dirty_x);
-        y11_dirty_h = (uint32_t)(oy2 - y11_dirty_y);
+            if (x < y11_buf_dirty[b].x)
+                y11_buf_dirty[b].x = x;
+            if (y < y11_buf_dirty[b].y)
+                y11_buf_dirty[b].y = y;
+            if (x2 > ox2)
+                ox2 = x2;
+            if (y2 > oy2)
+                oy2 = y2;
+            y11_buf_dirty[b].w = (uint32_t)(ox2 - y11_buf_dirty[b].x);
+            y11_buf_dirty[b].h = (uint32_t)(oy2 - y11_buf_dirty[b].y);
+        }
     }
 }
 
@@ -283,19 +292,33 @@ void y11_scanout_flush(void)
 {
     struct y11_output *out;
 
-    if (y11_scanout_root == NULL || !y11_scanout_dirty)
+    if (y11_scanout_root == NULL)
         return;
+    if (!y11_buf_dirty[0].dirty && !y11_buf_dirty[1].dirty)
+        return;
+    if (!y11_session_is_active())
+        return;
+    if (y11_drm_outputs() == NULL) {
+        y11_buf_dirty[0].dirty = false;
+        y11_buf_dirty[1].dirty = false;
+        return;
+    }
     for (out = y11_drm_outputs(); out != NULL; out = out->next) {
         if (out->pflip_pending)
             return;             /* one frame in flight; keep the damage */
     }
     for (out = y11_drm_outputs(); out != NULL; out = out->next) {
-        y11_scanout_blit(out, y11_dirty_x, y11_dirty_y, y11_dirty_w,
-                         y11_dirty_h);
-        if (y11_drm_page_flip(out) != 0)
+        uint8_t bb = out->back_buffer;
+        if (y11_buf_dirty[bb].dirty) {
+            y11_scanout_blit(out, y11_buf_dirty[bb].x, y11_buf_dirty[bb].y,
+                             y11_buf_dirty[bb].w, y11_buf_dirty[bb].h);
+        }
+        if (y11_drm_page_flip(out) == 0) {
+            y11_buf_dirty[bb].dirty = false;
+        } else {
             return;
+        }
     }
-    y11_scanout_dirty = false;
 }
 
 /* ---- lifecycle -------------------------------------------------------------------- */
