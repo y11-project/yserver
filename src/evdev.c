@@ -325,7 +325,14 @@ void y11_evdev_handle(struct y11_session *s, int fd)
         for (i = 0; i < count; i++) {
             struct input_event *ev = &evs[i];
 
-            if (s != NULL && !s->active)
+            /*
+             * When a real seat session exists (a VT to switch away
+             * from), inactive means switched away: drop the events.
+             * Without a session (headless over the socket, e.g.
+             * test.sh from inside a compositor's terminal) there is
+             * nothing to switch away from: process everything.
+             */
+            if (s != NULL && s->seat_fd >= 0 && !s->active)
                 continue;
 
             if (ev->type == EV_REL) {
