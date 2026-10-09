@@ -49,6 +49,8 @@
 #endif
 
 #define Y11_BITS_PER_LONG (sizeof(unsigned long) * 8u)
+#define Y11_EVDEV_MT_SLOTS 5
+#define Y11_EVDEV_SCROLL_STEP 40   /* trackpad units per wheel notch */
 #define Y11_TEST_BIT(b, a) \
     (((a)[(size_t)(b) / Y11_BITS_PER_LONG] & \
       (1ul << ((size_t)(b) % Y11_BITS_PER_LONG))) != 0)
@@ -77,6 +79,22 @@ struct y11_evdev_dev {
     int     has_abs_y;
     int16_t rel_dx;
     int16_t rel_dy;
+
+    /* Multi-touch (protocol B): per-slot finger state.  Without slot
+     * tracking, two interleaved fingers both write the shared ABS
+     * position and the pointer teleports between them. */
+    int     mt_slot;
+    int32_t mt_x[Y11_EVDEV_MT_SLOTS];
+    int32_t mt_y[Y11_EVDEV_MT_SLOTS];
+    int32_t mt_id[Y11_EVDEV_MT_SLOTS];  /* tracking id, -1 = lifted */
+    int     mt_fingers;                 /* fingers currently down */
+    int     scroll_active;              /* two-finger scroll in progress */
+    int32_t scroll_prev_x;
+    int32_t scroll_prev_y;
+    int32_t scroll_accum_x;
+    int32_t scroll_accum_y;
+    int     scroll_moved;
+    struct timespec scroll_down_time;
 };
 
 static struct y11_evdev_dev y11_evdev_devs[Y11_MAX_EVDEV_DEVICES];
@@ -162,6 +180,12 @@ static void y11_evdev_add_device(struct y11_session *s, const char *path)
     dev->has_keys = has_keys;
     dev->has_rel = has_rel;
     dev->has_abs = has_abs;
+    {
+        int sl;
+
+        for (sl = 0; sl < Y11_EVDEV_MT_SLOTS; sl++)
+            dev->mt_id[sl] = -1;        /* all fingers lifted */
+    }
 
     if (has_abs) {
         struct input_absinfo abs;
@@ -319,35 +343,73 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                     y11_input_button(0, btn);
                 }
             } else if (ev->type == EV_ABS) {
-                if (ev->code == ABS_X || ev->code == ABS_MT_POSITION_X) {
-                    dev->abs_x = ev->value;
-                    dev->has_abs_x = 1;
-                } else if (ev->code == ABS_Y || ev->code == ABS_MT_POSITION_Y) {
-                    dev->abs_y = ev->value;
-                    dev->has_abs_y = 1;
+                if (ev->code == ABS_MT_SLOT) {
+                    /* Protocol B: the events that follow belong to
+                     * this slot. */
+                    dev->mt_slot = ev->value >= 0 &&
+                        ev->value < Y11_EVDEV_MT_SLOTS ? ev->value : 0;
                 } else if (ev->code == ABS_MT_TRACKING_ID) {
-                    if (ev->value >= 0) {
+                    int was = dev->mt_id[dev->mt_slot] >= 0;
+                    int now_down = ev->value >= 0;
+
+                    dev->mt_id[dev->mt_slot] = ev->value;
+                    dev->mt_fingers += (now_down ? 1 : 0) - was;
+                    if (now_down) {
                         dev->touch_down = 1;
                         dev->touch_first = 1;
                         dev->touch_moved = 0;
                         dev->touch_prev_x = dev->abs_x;
                         dev->touch_prev_y = dev->abs_y;
-                        clock_gettime(CLOCK_MONOTONIC, &dev->touch_down_time);
-                    } else {
-                        if (dev->touch_down && !dev->touch_moved && !dev->is_direct) {
+                        clock_gettime(CLOCK_MONOTONIC,
+                                      &dev->touch_down_time);
+                        if (dev->mt_fingers >= 2 && !dev->scroll_active) {
+                            dev->scroll_active = 1;
+                            dev->scroll_moved = 0;
+                            dev->scroll_accum_x = 0;
+                            dev->scroll_accum_y = 0;
+                            dev->scroll_prev_x = dev->mt_x[dev->mt_slot];
+                            dev->scroll_prev_y = dev->mt_y[dev->mt_slot];
+                            clock_gettime(CLOCK_MONOTONIC,
+                                          &dev->scroll_down_time);
+                        }
+                    } else if (dev->mt_fingers == 0) {
+                        /* The last finger lifted: taps fire here. */
+                        if (dev->touch_down && !dev->touch_moved &&
+                            !dev->scroll_moved && !dev->is_direct) {
                             struct timespec now;
                             clock_gettime(CLOCK_MONOTONIC, &now);
-                            long ms = (now.tv_sec - dev->touch_down_time.tv_sec) * 1000 +
-                                      (now.tv_nsec - dev->touch_down_time.tv_nsec) / 1000000;
+                            long ms =
+                                (now.tv_sec - dev->touch_down_time.tv_sec) *
+                                    1000 +
+                                (now.tv_nsec - dev->touch_down_time.tv_nsec) /
+                                    1000000;
                             if (ms < 300) {
-                                y11_input_button(1, 1);
-                                y11_input_button(0, 1);
+                                if (dev->scroll_active) {
+                                    /* Two-finger tap = right click. */
+                                    y11_input_button(1, 3);
+                                    y11_input_button(0, 3);
+                                } else {
+                                    y11_input_button(1, 1);
+                                    y11_input_button(0, 1);
+                                }
                             }
                         }
                         dev->touch_down = 0;
                         dev->touch_first = 0;
                         dev->touch_moved = 0;
+                        dev->scroll_active = 0;
+                        dev->scroll_moved = 0;
                     }
+                } else if (ev->code == ABS_MT_POSITION_X) {
+                    dev->mt_x[dev->mt_slot] = ev->value;
+                } else if (ev->code == ABS_MT_POSITION_Y) {
+                    dev->mt_y[dev->mt_slot] = ev->value;
+                } else if (ev->code == ABS_X || ev->code == ABS_MT_POSITION_X) {
+                    dev->abs_x = ev->value;
+                    dev->has_abs_x = 1;
+                } else if (ev->code == ABS_Y || ev->code == ABS_MT_POSITION_Y) {
+                    dev->abs_y = ev->value;
+                    dev->has_abs_y = 1;
                 }
             } else if (ev->type == EV_KEY) {
                 if (ev->code == BTN_TOUCH) {
@@ -440,39 +502,102 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                                                (dev->abs_max_y - dev->abs_min_y));
 
                             y11_input_motion_abs((int16_t)sx, (int16_t)sy);
-                        } else {
-                            if (dev->touch_down) {
-                                if (dev->touch_first) {
-                                    dev->touch_prev_x = dev->abs_x;
-                                    dev->touch_prev_y = dev->abs_y;
-                                    dev->touch_first = 0;
-                                } else {
-                                    int32_t dx = dev->abs_x - dev->touch_prev_x;
-                                    int32_t dy = dev->abs_y - dev->touch_prev_y;
+                        } else if (dev->mt_fingers >= 2) {
+                            /*
+                             * Two or more fingers = scroll: the
+                             * pointer does not move, the finger
+                             * average drives wheel buttons (natural
+                             * scrolling - the content follows the
+                             * fingers).
+                             */
+                            int32_t sum_x = 0, sum_y = 0;
+                            int sl, count = 0;
 
-                                    dev->touch_prev_x = dev->abs_x;
-                                    dev->touch_prev_y = dev->abs_y;
-
-                                    /* Scale down high-resolution trackpads (e.g. MacBook T2 ~95 units/mm) */
-                                    if (dev->abs_max_x - dev->abs_min_x > 4000) {
-                                        dx = dx / 8;
-                                        dy = dy / 8;
-                                    }
-
-                                    if (dx > 1 || dx < -1 || dy > 1 || dy < -1)
-                                        dev->touch_moved = 1;
-
-                                    if (dx > 250)
-                                        dx = 250;
-                                    else if (dx < -250)
-                                        dx = -250;
-                                    if (dy > 250)
-                                        dy = 250;
-                                    else if (dy < -250)
-                                        dy = -250;
-                                    if (dx != 0 || dy != 0)
-                                        y11_input_motion((int16_t)dx, (int16_t)dy);
+                            for (sl = 0; sl < Y11_EVDEV_MT_SLOTS; sl++) {
+                                if (dev->mt_id[sl] >= 0) {
+                                    sum_x += dev->mt_x[sl];
+                                    sum_y += dev->mt_y[sl];
+                                    count++;
                                 }
+                            }
+                            if (count > 0) {
+                                int32_t avg_x = sum_x / count;
+                                int32_t avg_y = sum_y / count;
+                                int32_t dx = avg_x - dev->scroll_prev_x;
+                                int32_t dy = avg_y - dev->scroll_prev_y;
+
+                                dev->scroll_prev_x = avg_x;
+                                dev->scroll_prev_y = avg_y;
+                                if (dx > 1 || dx < -1 || dy > 1 || dy < -1)
+                                    dev->scroll_moved = 1;
+
+                                /* Scale down high-resolution trackpads. */
+                                if (dev->abs_max_x - dev->abs_min_x > 4000) {
+                                    dx = dx / 4;
+                                    dy = dy / 4;
+                                }
+                                dev->scroll_accum_x += dx;
+                                dev->scroll_accum_y += dy;
+                                while (dev->scroll_accum_y >=
+                                       Y11_EVDEV_SCROLL_STEP) {
+                                    y11_input_button(1, 4);
+                                    y11_input_button(0, 4);
+                                    dev->scroll_accum_y -=
+                                        Y11_EVDEV_SCROLL_STEP;
+                                }
+                                while (dev->scroll_accum_y <=
+                                       -Y11_EVDEV_SCROLL_STEP) {
+                                    y11_input_button(1, 5);
+                                    y11_input_button(0, 5);
+                                    dev->scroll_accum_y +=
+                                        Y11_EVDEV_SCROLL_STEP;
+                                }
+                                while (dev->scroll_accum_x <=
+                                       -Y11_EVDEV_SCROLL_STEP) {
+                                    y11_input_button(1, 6);
+                                    y11_input_button(0, 6);
+                                    dev->scroll_accum_x +=
+                                        Y11_EVDEV_SCROLL_STEP;
+                                }
+                                while (dev->scroll_accum_x >=
+                                       Y11_EVDEV_SCROLL_STEP) {
+                                    y11_input_button(1, 7);
+                                    y11_input_button(0, 7);
+                                    dev->scroll_accum_x -=
+                                        Y11_EVDEV_SCROLL_STEP;
+                                }
+                            }
+                        } else if (dev->touch_down) {
+                            if (dev->touch_first) {
+                                dev->touch_prev_x = dev->abs_x;
+                                dev->touch_prev_y = dev->abs_y;
+                                dev->touch_first = 0;
+                            } else {
+                                int32_t dx = dev->abs_x - dev->touch_prev_x;
+                                int32_t dy = dev->abs_y - dev->touch_prev_y;
+
+                                dev->touch_prev_x = dev->abs_x;
+                                dev->touch_prev_y = dev->abs_y;
+
+                                /* Scale down high-resolution trackpads (e.g. MacBook T2 ~95 units/mm) */
+                                if (dev->abs_max_x - dev->abs_min_x > 4000) {
+                                    dx = dx / 8;
+                                    dy = dy / 8;
+                                }
+
+                                if (dx > 1 || dx < -1 || dy > 1 || dy < -1)
+                                    dev->touch_moved = 1;
+
+                                if (dx > 250)
+                                    dx = 250;
+                                else if (dx < -250)
+                                    dx = -250;
+                                if (dy > 250)
+                                    dy = 250;
+                                else if (dy < -250)
+                                    dy = -250;
+                                if (dx != 0 || dy != 0)
+                                    y11_input_motion((int16_t)dx, (int16_t)dy);
                             }
                         }
                         dev->has_abs_x = 0;
