@@ -1052,13 +1052,15 @@ static int y11_dispatch_kill_client(struct y11_client *c,
 
 /*
  * SetCloseDownMode (112): DestroyAll(0) / RetainPermanent(1) /
- * RetainTemporary(2) — what survives this client's disconnect.
+ * RetainTemporary(2) — what survives this client's disconnect.  The
+ * 4-byte request carries the mode in header byte 1.
  */
 static int y11_dispatch_set_close_down_mode(struct y11_client *c,
                                             const uint8_t *pkt,
                                             size_t len, size_t data_off)
 {
-    if (len - data_off != 4u)
+    (void)data_off;
+    if (len != 4u)
         return y11_dispatch_bad_length(c, pkt[0]);
     if (pkt[1] > 2) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, pkt[1], pkt[0]);
