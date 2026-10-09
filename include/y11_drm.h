@@ -76,6 +76,7 @@ typedef struct y11_session {
 int  y11_session_init(struct y11_session *s);
 void y11_session_shutdown(struct y11_session *s);
 void y11_session_dispatch(struct y11_session *s);
+bool y11_session_is_active(void);
 
 /* ---- src/drm.c ------------------------------------------------------------------- */
 

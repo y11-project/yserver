@@ -488,3 +488,8 @@ int y11_session_request_vt_switch(int vt)
         return y11_session_switch_vt(y11_active_session, vt);
     return -1;
 }
+
+bool y11_session_is_active(void)
+{
+    return y11_active_session == NULL || y11_active_session->active;
+}

@@ -400,8 +400,10 @@ int y11_drm_page_flip(struct y11_output *out)
                         out->buffers[out->back_buffer].fb_id,
                         DRM_MODE_PAGE_FLIP_EVENT, out);
     if (r != 0) {
-        fprintf(stderr, "y11: drmModePageFlip(%u): %s\n", out->crtc_id,
-                strerror(errno));
+        if (errno != EPERM && errno != EBUSY) {
+            fprintf(stderr, "y11: drmModePageFlip(%u): %s\n", out->crtc_id,
+                    strerror(errno));
+        }
         return -1;
     }
     out->pflip_pending = true;
