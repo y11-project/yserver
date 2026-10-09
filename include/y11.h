@@ -380,6 +380,7 @@ enum y11_req_opcode {
     Y11_REQ_SET_SCREEN_SAVER         = 107,
     Y11_REQ_GET_SCREEN_SAVER         = 108,
     Y11_REQ_SET_CLOSE_DOWN_MODE      = 112,
+    Y11_REQ_KILL_CLIENT              = 113,
     Y11_REQ_FORCE_SCREEN_SAVER       = 115,
     Y11_REQ_NO_OPERATION             = 127
 };
@@ -442,6 +443,7 @@ struct y11_client {
     int dead;                   /* socket EOF or fatal I/O error */
     int wants_close;            /* protocol failure: close after flushing */
     int big_requests;           /* BIG-REQUESTS enabled for this client */
+    uint8_t close_down_mode;    /* DestroyAll(0), RetainPermanent, RetainTemporary */
     uint32_t sequence_number;   /* last request sequence seen */
     yid_t resource_id_base;     /* base of this client's resource id range */
 
@@ -585,6 +587,8 @@ void y11_server_shutdown(struct y11_server *srv);
 
 struct y11_client *y11_client_create(int fd, int slot);
 void y11_client_destroy(struct y11_server *srv, struct y11_client *c);
+void y11_client_kill_others(struct y11_client *except);
+void y11_client_bind_server(struct y11_server *srv);
 int  y11_client_read(struct y11_client *c);
 int  y11_client_process(struct y11_client *c);
 int  y11_client_flush(struct y11_client *c);

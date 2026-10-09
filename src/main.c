@@ -399,6 +399,7 @@ int y11_server_init(struct y11_server *srv, unsigned display)
     srv->seat_fd = -1;
     srv->drm_fd = -1;
     srv->client_pid = -1;
+    y11_client_bind_server(srv);
 
     if (snprintf(srv->socket_path, sizeof(srv->socket_path),
                  "%s/X%u", Y11_SOCKET_DIR, display) >=

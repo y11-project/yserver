@@ -1020,8 +1020,55 @@ static const char *y11_xfixes_get_cursor_name(uint32_t cursor)
     return NULL;
 }
 
-/* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */
-static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
+/*
+ * KillClient (113): disconnect the client that owns the resource.
+ * The _XSETROOT_ID protocol (feh, xsetroot) kills the previous
+ * background-setter through its window id; resource 0
+ * (AllTemporary) disconnects every other client whose close-down
+ * mode is DestroyAll.
+ */
+static int y11_dispatch_kill_client(struct y11_client *c,
+                                    const uint8_t *pkt, size_t len,
+                                    size_t data_off)
+{
+    const uint8_t *body = pkt + data_off;
+    uint32_t resource;
+    struct y11_window *win;
+
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+    resource = y11_wire_get32(body + 0);
+    if (resource == 0) {
+        y11_client_kill_others(c);
+        return 0;
+    }
+
+    win = y11_window_get(resource);
+    if (win != NULL && win->owner != NULL && win->owner != c)
+        win->owner->dead = 1;
+    return 0;                   /* unknown resource: no-op */
+}
+
+/*
+ * SetCloseDownMode (112): DestroyAll(0) / RetainPermanent(1) /
+ * RetainTemporary(2) — what survives this client's disconnect.
+ */
+static int y11_dispatch_set_close_down_mode(struct y11_client *c,
+                                            const uint8_t *pkt,
+                                            size_t len, size_t data_off)
+{
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+    if (pkt[1] > 2) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, pkt[1], pkt[0]);
+        return 0;
+    }
+    c->close_down_mode = pkt[1];
+    return 0;                   /* no reply */
+}
+
+/* AllocColor (84): 16-byte request (colormap, red, green, blue, pad). */static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off)
 {
     y11_alloc_color_reply rep;
@@ -1045,7 +1092,7 @@ static int y11_dispatch_alloc_color(struct y11_client *c, const uint8_t *pkt,
     return 0;
 }
 
-/* AllocNamedColor (85): colormap, pixel, name length, name. */
+/* AllocNamedColor (85): colormap, nbytes, pad(2), then the name. */
 static int y11_dispatch_alloc_named_color(struct y11_client *c,
                                           const uint8_t *pkt, size_t len,
                                           size_t data_off)
@@ -1053,13 +1100,13 @@ static int y11_dispatch_alloc_named_color(struct y11_client *c,
     y11_alloc_named_color_reply rep;
     uint16_t name_len, red, green, blue;
 
-    if (len - data_off < 12u)   /* colormap, pixel, name length, pad */
+    if (len - data_off < 12u)   /* colormap, nbytes, pad */
         return y11_dispatch_bad_length(c, pkt[0]);
-    name_len = y11_wire_get16(pkt + data_off + 8);
-    if (len - data_off - 12u < y11_wire_pad4(name_len))
+    name_len = y11_wire_get16(pkt + data_off + 4);
+    if (len - data_off - 8u < y11_wire_pad4(name_len))
         return y11_dispatch_bad_length(c, pkt[0]);
 
-    if (y11_parse_color((const char *)pkt + data_off + 12, name_len,
+    if (y11_parse_color((const char *)pkt + data_off + 8, name_len,
                         &red, &green, &blue) != 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_NAME, 0, pkt[0]);
         return 0;
@@ -1471,6 +1518,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     case Y11_REQ_GET_IMAGE:
         return y11_render_req_get_image(c, pkt, len, data_off);
     case Y11_REQ_SET_CLOSE_DOWN_MODE:
+        return y11_dispatch_set_close_down_mode(c, pkt, len, data_off);
+    case Y11_REQ_KILL_CLIENT:
+        return y11_dispatch_kill_client(c, pkt, len, data_off);
     case Y11_REQ_NO_OPERATION:
         return 0;               /* no reply */
     default:

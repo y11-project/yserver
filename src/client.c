@@ -51,6 +51,28 @@ struct y11_client *y11_client_create(int fd, int slot)
     return c;
 }
 
+static struct y11_server *y11_client_server;    /* for KillClient(AllTemporary) */
+
+void y11_client_bind_server(struct y11_server *srv)
+{
+    y11_client_server = srv;
+}
+
+void y11_client_kill_others(struct y11_client *except)
+{
+    size_t i;
+
+    if (y11_client_server == NULL)
+        return;
+    for (i = 0; i < Y11_MAX_CLIENTS; i++) {
+        struct y11_client *other = y11_client_server->clients[i];
+
+        if (other != NULL && other != except &&
+            other->close_down_mode == 0 /* DestroyAll */)
+            other->dead = 1;
+    }
+}
+
 void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
 {
     size_t i;
