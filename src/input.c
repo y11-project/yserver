@@ -118,7 +118,9 @@ static const struct {
     { 111, { 0xff52, 0xff52 } },            /* Up */
     { 113, { 0xff51, 0xff51 } },            /* Left */
     { 114, { 0xff53, 0xff53 } },            /* Right */
-    { 116, { 0xff54, 0xff54 } }             /* Down */
+    { 116, { 0xff54, 0xff54 } },            /* Down */
+    { 133, { 0xffeb, 0xffeb } },            /* Super_L */
+    { 134, { 0xffec, 0xffec } }            /* Super_R */
 };
 
 /* ---- timestamps ---------------------------------------------------------- */
