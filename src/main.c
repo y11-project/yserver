@@ -419,11 +419,65 @@ int y11_server_init(struct y11_server *srv, unsigned display)
     return 0;
 }
 
+/* mkdir -p equivalent so --log-dir works without setup. */
+static void y11_mkdir_p(const char *path)
+{
+    char buf[512];
+    size_t i, len;
+
+    if (path == NULL || path[0] == '\0')
+        return;
+    len = strlen(path);
+    if (len >= sizeof(buf))
+        return;
+    memcpy(buf, path, len + 1);
+    for (i = 1; i < len; i++) {
+        if (buf[i] != '/')
+            continue;
+        buf[i] = '\0';
+        (void)mkdir(buf, 0755);
+        buf[i] = '/';
+    }
+    (void)mkdir(buf, 0755);
+}
+
 int main(int argc, char **argv)
 {
     struct y11_server srv;
     unsigned display = 0;
     int client_arg_idx = -1;
+    int debug_flag = 0;
+    const char *log_dir = NULL;
+    int i;
+
+    /*
+     * Flags: -d/--debug enable verbose logging, --log-dir DIR captures
+     * all server output (startup, errors, verbose debug) into
+     * DIR/y11-<display>.log.  Flags are removed from argv so the
+     * client command stays intact wherever they appear.
+     */
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0) {
+            debug_flag = 1;
+            argv[i] = NULL;
+        } else if (strcmp(argv[i], "--log-dir") == 0 && i + 1 < argc) {
+            log_dir = argv[i + 1];
+            argv[i] = NULL;
+            argv[i + 1] = NULL;
+            i++;
+        }
+    }
+    {
+        int w = 1;
+
+        for (i = 1; i < argc; i++) {
+            if (argv[i] != NULL)
+                argv[w++] = argv[i];
+        }
+        for (i = w; i < argc; i++)
+            argv[i] = NULL;         /* stale slots: keep exec argv sane */
+        argc = w;
+    }
 
     if (argc > 1) {
         int idx = 1;
@@ -443,7 +497,30 @@ int main(int argc, char **argv)
             client_arg_idx = idx;
     }
 
-    y11_debug = getenv("Y11_DEBUG") != NULL;
+    y11_debug = debug_flag || getenv("Y11_DEBUG") != NULL;
+
+    /*
+     * --log-dir DIR: point stderr at DIR/y11-<display>.log so the whole
+     * run (startup, errors, verbose debug, and the spawned client's
+     * stderr) is captured for diagnosis after the fact.  Truncated per
+     * run so repeated tests read cleanly.
+     */
+    if (log_dir != NULL) {
+        char log_path[512];
+        FILE *lf;
+
+        y11_mkdir_p(log_dir);
+        (void)snprintf(log_path, sizeof(log_path), "%s/y11-%u.log",
+                       log_dir, display);
+        lf = fopen(log_path, "w");
+        if (lf != NULL) {
+            (void)dup2(fileno(lf), STDERR_FILENO);
+            (void)fclose(lf);
+        } else {
+            fprintf(stderr, "y11: cannot open log file %s: %s\n",
+                    log_path, strerror(errno));
+        }
+    }
 
     if (y11_server_init(&srv, display) != 0)
         return EXIT_FAILURE;
