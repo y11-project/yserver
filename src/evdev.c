@@ -135,14 +135,37 @@ static void y11_evdev_add_device(struct y11_session *s, const char *path)
         return;
     }
 
-    /* Avoid duplicates */
+    /*
+     * Avoid duplicates, but evict entries whose fd a VT switch-away
+     * revoked: logind pauses devices when another VT takes over, the
+     * poll loop may never learn (no events, no readable on a revoked
+     * node), and keeping the stale fd would silently eat all input
+     * after switch-back.  Probe with a read; a live device answers
+     * EAGAIN (nothing pending) while a revoked one fails hard.
+     */
     for (i = 0; i < y11_evdev_count; i++) {
-        if (y11_evdev_devs[i].rdev == st.st_rdev) {
+        char probe;
+        ssize_t n;
+
+        if (y11_evdev_devs[i].rdev != st.st_rdev)
+            continue;
+        errno = 0;
+        n = read(y11_evdev_devs[i].fd, &probe, 1);
+        if (n >= 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
+            /* Still live: keep the existing entry. */
             if (dev_id >= 0 && s != NULL && s->seat != NULL)
                 (void)libseat_close_device(s->seat, dev_id);
             close(fd);
             return;
         }
+        /* Dead: evict it and register the fresh fd instead. */
+        if (y11_evdev_devs[i].dev_id >= 0 && s != NULL && s->seat != NULL)
+            (void)libseat_close_device(s->seat, y11_evdev_devs[i].dev_id);
+        close(y11_evdev_devs[i].fd);
+        for (; i + 1 < y11_evdev_count; i++)
+            y11_evdev_devs[i] = y11_evdev_devs[i + 1];
+        y11_evdev_count--;
+        break;
     }
 
     memset(evbits, 0, sizeof(evbits));
@@ -615,8 +638,10 @@ void y11_evdev_handle(struct y11_session *s, int fd)
         }
     }
 
-    if (n < 0 && (errno == ENODEV || errno == EACCES || errno == EIO)) {
-        /* Device disconnected or revoked */
+    if (n < 0 && (errno == ENODEV || errno == EACCES || errno == EIO ||
+                  errno == EPERM)) {
+        /* Device disconnected or revoked (logind pauses devices on a
+         * VT switch-away and cgroup revocation surfaces as EPERM). */
         if (dev->dev_id >= 0 && s != NULL && s->seat != NULL)
             (void)libseat_close_device(s->seat, dev->dev_id);
         close(dev->fd);
