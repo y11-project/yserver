@@ -746,9 +746,15 @@ static int y11_render_add_glyphs(struct y11_client *c, const uint8_t *pkt,
             uint8_t *bits = NULL;
 
             if (bits_size > 0) {
-                size_t padded = y11_wire_pad4((uint32_t)bits_size);
+                size_t wire_stride = ((size_t)width + 3u) & ~(size_t)3u;
+                size_t wire_size;
+                size_t r;
 
-                if (bits_off + bits_size > len - data_off)
+                if (gs->format != NULL && gs->format->depth == 32)
+                    wire_stride = (size_t)width * 4u;
+                wire_size = wire_stride * (size_t)height;
+
+                if (bits_off + wire_size > len - data_off)
                     return y11_dispatch_bad_length(c, pkt[0]);
                 bits = malloc(bits_size);
                 if (bits == NULL) {
@@ -756,8 +762,12 @@ static int y11_render_add_glyphs(struct y11_client *c, const uint8_t *pkt,
                                             pkt[0]);
                     return 0;
                 }
-                memcpy(bits, body + bits_off, bits_size);
-                bits_off += padded;
+                for (r = 0; r < (size_t)height; r++) {
+                    memcpy(bits + r * (size_t)width,
+                           body + bits_off + r * wire_stride,
+                           (size_t)width);
+                }
+                bits_off += wire_size;
             }
 
             /* Replace any earlier glyph with the same id. */
