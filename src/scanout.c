@@ -260,18 +260,27 @@ void y11_scanout_set_cursor_default(void)
 static void y11_scanout_cursor_init(int fd)
 {
     struct drm_get_cap cap;
-    uint64_t cw = 64, ch = 64;   /* the size i915 and most drivers take */
+    uint64_t cw = 64, ch = 64;
 
     memset(&cap, 0, sizeof(cap));
     cap.capability = DRM_CAP_CURSOR_WIDTH;
-    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0 &&
-        cap.value <= 256)
+    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0)
         cw = cap.value;
     memset(&cap, 0, sizeof(cap));
     cap.capability = DRM_CAP_CURSOR_HEIGHT;
-    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0 &&
-        cap.value <= 256)
+    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0)
         ch = cap.value;
+    /*
+     * i915 answers these caps with its maximum plane size (256x256),
+     * but the legacy drmModeSetCursor rejects anything above 64x64
+     * with EPERM on hardware like the T2's Ice Lake.  64x64 is the
+     * size the legacy API takes everywhere, and every cursor y11
+     * serves (the 32px arrow, 48px themed cursors) fits inside.
+     */
+    if (cw > 64)
+        cw = 64;
+    if (ch > 64)
+        ch = 64;
     y11_cursor_plane_w = (uint16_t)cw;
     y11_cursor_plane_h = (uint16_t)ch;
     if (y11_debug)
