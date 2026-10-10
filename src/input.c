@@ -486,6 +486,20 @@ uint16_t y11_input_modifier_mask_for(uint8_t keycode)
     return 0;
 }
 
+/*
+ * Drop all pressed-key and modifier state.  Called on VT switch-away
+ * and switch-back: release events for keys held during the switch are
+ * lost (the evdev devices are revoked mid-press), and the stale state
+ * otherwise makes every later keypress look like Ctrl+Alt+<key>,
+ * which apps ignore.  Real X servers do the same reset.
+ */
+void y11_input_reset_keys(void)
+{
+    memset(y11_keyboard_state.key_state, 0,
+           sizeof(y11_keyboard_state.key_state));
+    y11_keyboard_state.modifier_mask = 0;
+}
+
 void y11_input_key(int press, uint8_t keycode)
 {
     uint8_t byte = keycode / 8;

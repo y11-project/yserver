@@ -780,6 +780,7 @@ struct y11_client *y11_grab_match_button(uint8_t button, uint16_t state);
 struct y11_client *y11_grab_match_key(uint8_t key, uint16_t state);
 void y11_grab_button_release_check(void);
 void y11_grab_key_release_check(void);
+void y11_grab_reset_keyboard(void);
 void y11_grab_confine(int16_t *x, int16_t *y);
 void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
                       uint32_t mask_bit);
@@ -919,6 +920,8 @@ const y11_keyboard_t *y11_input_keyboard(void);
 void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2]);
 /* Modifier mask a keycode produces (0 when not a modifier key). */
 uint16_t y11_input_modifier_mask_for(uint8_t keycode);
+/* Drop all pressed-key and modifier state (VT switch). */
+void y11_input_reset_keys(void);
 /* Minimal XKEYBOARD extension (XKB) request dispatcher. */
 int  y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                  size_t data_off);

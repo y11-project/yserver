@@ -197,6 +197,21 @@ void y11_grab_key_release_check(void)
 }
 
 /*
+ * Drop a passive-activated keyboard grab on a VT switch: keys held
+ * during the switch never get their release events, so the grab's
+ * all-keys-released condition would never fire and it would swallow
+ * the whole keyboard afterwards.  Explicit GrabKeyboard grabs are
+ * left alone - their owners will ungrab or die eventually.
+ */
+void y11_grab_reset_keyboard(void)
+{
+    if (y11_keyboard_grab.active && y11_keyboard_grab.passive) {
+        memset(&y11_keyboard_grab, 0, sizeof(y11_keyboard_grab));
+        y11_last_grab_time = y11_input_event_time();
+    }
+}
+
+/*
  * Deliver a device event through an active grab: with owner-events off
  * (the simple case) the grabbing client receives events selected in
  * the grab's event mask, as if it had selected them on the grab

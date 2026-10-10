@@ -54,6 +54,14 @@ static void y11_session_enable(struct libseat *seat, void *userdata)
     struct y11_session *s = userdata;
 
     (void)seat;
+    /*
+     * Fresh keyboard state on switch-back: keys held across the switch
+     * lost their release events while the evdev devices were revoked,
+     * and the stale pressed-key/modifier bits would turn every later
+     * keypress into a bogus Ctrl+Alt combo that apps ignore.
+     */
+    y11_input_reset_keys();
+    y11_grab_reset_keyboard();
     s->active = true;
     if (y11_debug)
         fprintf(stderr, "y11: seat enabled (session active)\n");
@@ -70,6 +78,10 @@ static void y11_session_disable(struct libseat *seat, void *userdata)
     struct y11_session *s = userdata;
 
     (void)seat;
+    /* Keys held across the switch never see their releases: drop the
+     * state now so nothing lingers when the session comes back. */
+    y11_input_reset_keys();
+    y11_grab_reset_keyboard();
     s->active = false;
     if (y11_debug)
         fprintf(stderr, "y11: seat disabled (VT switch away)\n");
