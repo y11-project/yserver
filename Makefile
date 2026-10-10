@@ -1,5 +1,7 @@
 # Y11 - core X11 display server daemon for The Y11 Project.
 # POSIX make: no GNU extensions (no wildcard, no patsubst, no :=).
+# Copyright (c) 2026 The Y11 Project
+# SPDX-License-Identifier: BSD-2-Clause
 
 CC       = cc
 CFLAGS   = -std=c99 -pedantic -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L $(DRM_INCS)
@@ -25,7 +27,7 @@ FreeBSD_SEATLIB = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
 HDRS = include/y11.h include/y11_wire.h include/y11_drm.h include/libseat.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o src/xkb.o src/cursor.o
+OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o src/xkb.o src/cursor.o src/saver.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -122,3 +124,6 @@ install: all
 
 src/cursor.o: src/cursor.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/cursor.c -o $@
+
+src/saver.o: src/saver.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/saver.c -o $@

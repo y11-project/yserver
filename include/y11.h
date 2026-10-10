@@ -8,6 +8,9 @@
  * state and the top-level server object shared between the socket event
  * loop (src/main.c), the connection layer (src/client.c), the request
  * dispatcher (src/dispatch.c) and the atom subsystem (src/atom.c).
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #ifndef Y11_H
@@ -70,6 +73,8 @@ typedef uint32_t yid_t;
 #define Y11_XKB_NAME          "XKEYBOARD"
 #define Y11_XKB_EXT_OPCODE    146u      /* major opcode handed out for the extension */
 #define Y11_XKB_FIRST_EVENT    66u      /* XKB notify event base (events unused) */
+#define Y11_SAVER_NAME        "MIT-SCREEN-SAVER"
+#define Y11_SAVER_EXT_OPCODE   147u     /* major opcode handed out for the extension */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -897,6 +902,11 @@ void y11_cursor_purge_client(struct y11_client *c);
 int  y11_cursor_set_window(struct y11_window *win, yid_t cursor);
 /* Re-resolve the cursor under the pointer after motion or changes. */
 void y11_cursor_refresh(void);
+/* Milliseconds since the last device event (MIT-SCREEN-SAVER). */
+uint32_t y11_input_idle_ms(void);
+/* Minimal MIT-SCREEN-SAVER extension request dispatcher. */
+int  y11_saver_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                   size_t data_off);
 void y11_scanout_move_cursor(int32_t x, int32_t y);
 /* Upload a client cursor image (ARGB, X pixel order) to the cursor
  * plane; returns -1 when KMS rejects the size or no output exists. */

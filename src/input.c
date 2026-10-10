@@ -12,6 +12,9 @@
  * otherwise events walk up the window hierarchy from the window under
  * the cursor (pointer) or the focus window (keyboard) until a client
  * has selected the right event mask.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdio.h>
@@ -135,6 +138,20 @@ uint32_t y11_input_event_time(void)
     gettimeofday(&tv, NULL);
     return (uint32_t)((tv.tv_sec - y11_input_start.tv_sec) * 1000 +
                       (tv.tv_usec - y11_input_start.tv_usec) / 1000);
+}
+
+/* Time of the last device event, for MIT-SCREEN-SAVER's idle value. */
+static uint32_t y11_last_input_time;
+
+static void y11_input_touch(void)
+{
+    y11_last_input_time = y11_input_event_time();
+}
+
+/* Milliseconds since the last device event. */
+uint32_t y11_input_idle_ms(void)
+{
+    return y11_input_event_time() - y11_last_input_time;
 }
 
 /* ---- state accessors -------------------------------------------------------- */
@@ -387,12 +404,14 @@ static void y11_input_do_motion(int16_t x, int16_t y)
 
 void y11_input_motion(int16_t dx, int16_t dy)
 {
+    y11_input_touch();
     y11_input_do_motion((int16_t)(y11_pointer_state.root_x + dx),
                         (int16_t)(y11_pointer_state.root_y + dy));
 }
 
 void y11_input_motion_abs(int16_t x, int16_t y)
 {
+    y11_input_touch();
     y11_input_do_motion(x, y);
 }
 
@@ -400,6 +419,7 @@ void y11_input_motion_abs(int16_t x, int16_t y)
 
 void y11_input_button(int press, uint8_t button)
 {
+    y11_input_touch();
     uint16_t bit;
     struct y11_window *hit;
     const y11_grab_t *grab = y11_grab_pointer_active();
@@ -502,6 +522,7 @@ void y11_input_reset_keys(void)
 
 void y11_input_key(int press, uint8_t keycode)
 {
+    y11_input_touch();
     uint8_t byte = keycode / 8;
     uint8_t bit = (uint8_t)(1u << (keycode % 8));
     struct y11_window *focus;
