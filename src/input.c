@@ -27,6 +27,8 @@ static y11_keyboard_t y11_keyboard_state;
 static struct timeval y11_input_start;
 
 /* keycode -> X11 modifier, standard evdev keycodes (scancode + 8) */
+/* Static modifier-key table: keycode -> X modifier mask.  Used by the
+ * state tracking and exposed to XKB's modifier-map section. */
 static const struct {
     uint8_t keycode;
     uint16_t mask;
@@ -469,6 +471,19 @@ static void y11_input_update_modifiers(uint8_t keycode, int press)
     }
 }
 
+/* Modifier mask a keycode produces (0 when not a modifier key). */
+uint16_t y11_input_modifier_mask_for(uint8_t keycode)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof(y11_modifier_keys) / sizeof(y11_modifier_keys[0]);
+         i++) {
+        if (y11_modifier_keys[i].keycode == keycode)
+            return y11_modifier_keys[i].mask;
+    }
+    return 0;
+}
+
 void y11_input_key(int press, uint8_t keycode)
 {
     uint8_t byte = keycode / 8;
@@ -634,7 +649,7 @@ static uint32_t y11_keysym_override[Y11_KEYSYM_OVERRIDE_MAX][Y11_KEYSYM_PER_KEYC
 static uint8_t y11_keysym_override_set[Y11_KEYSYM_OVERRIDE_MAX];
 
 /* Get the keysyms for one keycode, honoring client overrides. */
-static void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2])
+void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2])
 {
     size_t entry;
 

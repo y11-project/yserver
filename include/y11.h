@@ -67,6 +67,9 @@ typedef uint32_t yid_t;
 #define Y11_GLX_EXT_OPCODE    143u      /* major opcode handed out for the extension */
 #define Y11_RENDER_NAME       "RENDER"
 #define Y11_RENDER_EXT_OPCODE 139u      /* major opcode handed out for the extension */
+#define Y11_XKB_NAME          "XKEYBOARD"
+#define Y11_XKB_EXT_OPCODE    146u      /* major opcode handed out for the extension */
+#define Y11_XKB_FIRST_EVENT    66u      /* XKB notify event base (events unused) */
 
 /* ---- event type codes (numeric values per the X11 wire standard) ------- */
 
@@ -882,6 +885,13 @@ void y11_input_button(int press, uint8_t button);
 void y11_input_key(int press, uint8_t keycode);
 const y11_pointer_t *y11_input_pointer(void);
 const y11_keyboard_t *y11_input_keyboard(void);
+/* Keysyms for one keycode (level 0 and level 1), honoring overrides. */
+void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2]);
+/* Modifier mask a keycode produces (0 when not a modifier key). */
+uint16_t y11_input_modifier_mask_for(uint8_t keycode);
+/* Minimal XKEYBOARD extension (XKB) request dispatcher. */
+int  y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
+                 size_t data_off);
 int  y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off);
 int  y11_input_req_get_keyboard_mapping(struct y11_client *c,
