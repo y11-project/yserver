@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stdio.h>
 #include "y11.h"
 #include "y11_wire.h"
 
@@ -131,6 +132,8 @@ static struct y11_render_picture *y11_render_picture_find(yid_t id)
 
 static void y11_render_picture_free(struct y11_render_picture *p)
 {
+    if (p->drawable != NULL)
+        y11_pixmap_picture_released(p->drawable);
     free(p->clip_rects);
     free(p);
 }
@@ -465,6 +468,13 @@ static int y11_render_create_picture(struct y11_client *c,
     p->id = pid;
     p->drawable = d;
     p->format = pf;
+    /* Pictures keep the source pixmap alive (libXcursor frees the
+     * pixmap before RenderCreateCursor arrives). */
+    if (d->type == Y11_DRAWABLE_PIXMAP) {
+        struct y11_pixmap *pm = (struct y11_pixmap *)d;
+
+        pm->picture_refs++;
+    }
     p->next = y11_render_pictures;
     y11_render_pictures = p;
     return 0;                   /* no reply */
@@ -1062,15 +1072,41 @@ int y11_render_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_RENDER_COMPOSITE:
         return 0;
     case 27: {                  /* RenderCreateCursor: cid, src, x, y */
-        uint32_t cid;
+        uint32_t cid, src_id;
+        uint16_t hot_x, hot_y;
+        struct y11_render_picture *pic;
+        y11_drawable_t *d;
 
-        if (len - data_off < 8u)
+        if (len - data_off != 12u)
             return y11_dispatch_bad_length(c, pkt[0]);
         cid = y11_wire_get32(pkt + data_off);
-        if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+        src_id = y11_wire_get32(pkt + data_off + 4);
+        hot_x = y11_wire_get16(pkt + data_off + 8);
+        hot_y = y11_wire_get16(pkt + data_off + 10);
+
+        pic = y11_render_picture_find(src_id);
+        if (pic == NULL || pic->client != c) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, src_id, pkt[0]);
+            return 0;
+        }
+        d = pic->drawable;
+        if (d == NULL || d->pixels == NULL || d->depth != 32u ||
+            d->width == 0 || d->height == 0) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH, src_id, pkt[0]);
+            return 0;
+        }
+        if (hot_x >= d->width || hot_y >= d->height) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_MATCH,
+                                    (uint32_t)hot_x, pkt[0]);
+            return 0;
+        }
+        if (y11_cursor_create(cid, c, d->width, d->height,
+                              (int16_t)hot_x, (int16_t)hot_y,
+                              d->pixels, d->stride) != 0) {
             y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
             return 0;
         }
+        y11_cursor_refresh();
         return 0;               /* accepted, no reply */
     }
     case 28:                    /* RenderSetPictureTransform */

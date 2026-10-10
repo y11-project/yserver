@@ -32,9 +32,10 @@ void y11_pixmap_destroy(void *ptr)
     free(p);
 }
 
-static int y11_pixmap_belongs(void *ptr, struct y11_client *client)
+static int y11_pixmap_belongs(void *ptr, void *arg)
 {
-    return ((const struct y11_pixmap *)ptr)->owner == client;
+    return ((const struct y11_pixmap *)ptr)->owner ==
+           (struct y11_client *)arg;
 }
 
 /*
@@ -159,6 +160,15 @@ int y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
     }
 
     y11_resource_remove(pid);
+    /*
+     * libXcursor frees the source pixmap before RenderCreateCursor, so
+     * a pixmap pictures still reference only leaves the id namespace;
+     * the memory dies with the last picture.
+     */
+    if (p->picture_refs > 0) {
+        p->orphaned = true;
+        return 0;
+    }
     y11_pixmap_destroy(p);
     return 0;                   /* no reply */
 }
@@ -169,6 +179,34 @@ int y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
  */
 void y11_pixmap_purge_client(struct y11_client *c)
 {
-    y11_resource_purge_type(Y11_RESOURCE_PIXMAP, c, y11_pixmap_belongs,
-                            y11_pixmap_destroy);
+    y11_resource_purge_type_arg(Y11_RESOURCE_PIXMAP, c,
+                                y11_pixmap_belongs,
+                                y11_pixmap_unref);
+}
+
+/* Drop one reference from a RENDER picture; free orphans. */
+void y11_pixmap_picture_released(y11_drawable_t *d)
+{
+    struct y11_pixmap *p = (struct y11_pixmap *)d;
+
+    if (d == NULL || d->type != Y11_DRAWABLE_PIXMAP)
+        return;
+    if (p->picture_refs > 0)
+        p->picture_refs--;
+    if (p->picture_refs == 0 && p->orphaned)
+        y11_pixmap_destroy(p);
+}
+
+/* Unref with orphaning: used for FreePixmap and the disconnect purge. */
+void y11_pixmap_unref(void *ptr)
+{
+    struct y11_pixmap *p = ptr;
+
+    if (p == NULL)
+        return;
+    if (p->picture_refs > 0) {
+        p->orphaned = true;
+        return;
+    }
+    y11_pixmap_destroy(p);
 }

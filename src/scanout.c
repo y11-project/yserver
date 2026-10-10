@@ -30,10 +30,15 @@ struct y11_scanout_damage {
 
 static struct y11_scanout_damage y11_buf_dirty[2];
 
-/* Hardware cursor (legacy KMS API, ARGB 64x64). */
+/* Hardware cursor (legacy KMS API, ARGB).  The BO is recreated when
+ * a client cursor of a different size is uploaded. */
 static uint32_t y11_cursor_handle;
 static uint32_t y11_cursor_map_size;
+static uint32_t y11_cursor_map_pitch;
 static uint32_t *y11_cursor_map;
+static uint16_t y11_cursor_w, y11_cursor_h;
+static int16_t  y11_cursor_hot_x, y11_cursor_hot_y;
+static uint32_t y11_cursor_bo_w, y11_cursor_bo_h;
 
 union y11_cursor_pixel {
     uint32_t argb;
@@ -76,18 +81,68 @@ static const char *const y11_cursor_shape[32] = {
     "................................"
 };
 
-static void y11_scanout_cursor_init(int fd)
+/* Rasterize the built-in arrow into X pixel-order uint32s. */
+static uint32_t *y11_cursor_arrow_pixels(uint16_t *w, uint16_t *h)
+{
+    static uint32_t px[32 * 32];
+    int y, x;
+
+    memset(px, 0, sizeof(px));
+    for (y = 0; y < 32; y++) {
+        for (x = 0; x < 32; x++) {
+            char c = y11_cursor_shape[y][x];
+            union y11_cursor_pixel p;
+
+            p.argb = 0;
+            if (c == 'X') {              /* black outline */
+                p.c.r = 0; p.c.g = 0; p.c.b = 0; p.c.a = 255;
+            } else if (c == 'O') {       /* white fill */
+                p.c.r = 255; p.c.g = 255; p.c.b = 255; p.c.a = 255;
+            }
+            px[y * 32 + x] = p.argb;
+        }
+    }
+    *w = 32;
+    *h = 32;
+    return px;
+}
+
+static void y11_scanout_cursor_bo_destroy(void)
+{
+    if (y11_cursor_handle != 0 && y11_drm_outputs() != NULL) {
+        struct drm_mode_destroy_dumb d = { .handle = y11_cursor_handle };
+        struct y11_output *out;
+
+        for (out = y11_drm_outputs(); out != NULL; out = out->next)
+            (void)drmModeSetCursor(out->drm_fd, out->crtc_id, 0, 0, 0);
+        (void)drmIoctl(y11_drm_outputs()->drm_fd,
+                       DRM_IOCTL_MODE_DESTROY_DUMB, &d);
+    }
+    if (y11_cursor_map != NULL && y11_cursor_map != MAP_FAILED)
+        munmap(y11_cursor_map, y11_cursor_map_size);
+    y11_cursor_map = NULL;
+    y11_cursor_handle = 0;
+    y11_cursor_bo_w = y11_cursor_bo_h = 0;
+}
+
+static int y11_scanout_cursor_bo_create(uint16_t width, uint16_t height)
 {
     struct drm_mode_create_dumb create;
     struct drm_mode_map_dumb map;
-    int y, x;
+    struct y11_output *out;
+    int fd;
+
+    out = y11_drm_outputs();
+    if (out == NULL)
+        return -1;
+    fd = out->drm_fd;
 
     memset(&create, 0, sizeof(create));
-    create.width = 64;
-    create.height = 64;
+    create.width = width;
+    create.height = height;
     create.bpp = 32;
     if (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &create) != 0)
-        return;
+        return -1;
     memset(&map, 0, sizeof(map));
     map.handle = create.handle;
     if (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &map) != 0)
@@ -99,24 +154,11 @@ static void y11_scanout_cursor_init(int fd)
         goto fail;
     }
     y11_cursor_map_size = create.size;
+    y11_cursor_map_pitch = create.pitch;
     y11_cursor_handle = create.handle;
-    memset(y11_cursor_map, 0, create.size);
-
-    for (y = 0; y < 32; y++) {
-        for (x = 0; x < 32; x++) {
-            char c = y11_cursor_shape[y][x];
-            union y11_cursor_pixel px;
-
-            px.argb = 0;
-            if (c == 'X') {              /* black outline */
-                px.c.r = 0; px.c.g = 0; px.c.b = 0; px.c.a = 255;
-            } else if (c == 'O') {       /* white fill */
-                px.c.r = 255; px.c.g = 255; px.c.b = 255; px.c.a = 255;
-            }
-            y11_cursor_map[y * (create.pitch / 4) + x] = px.argb;
-        }
-    }
-    return;
+    y11_cursor_bo_w = width;
+    y11_cursor_bo_h = height;
+    return 0;
 
 fail:
     {
@@ -124,6 +166,70 @@ fail:
 
         (void)drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &d);
     }
+    return -1;
+}
+
+/*
+ * Upload a client cursor image to the cursor plane.  Pixels arrive in
+ * X pixel order (A<<24|R<<16|G<<8|B), which is the KMS ARGB8888
+ * layout, so rows copy verbatim.  The BO is recreated when the
+ * geometry changes; if KMS rejects the size, the arrow stays.
+ */
+int y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
+                           uint16_t height, int16_t hot_x, int16_t hot_y)
+{
+    struct y11_output *out;
+    uint16_t y;
+
+    if (y11_drm_outputs() == NULL)
+        return -1;
+    if (width == 0 || height == 0 || width > 256u || height > 256u)
+        return -1;
+    if (hot_x < 0 || (uint16_t)hot_x >= width ||
+        hot_y < 0 || (uint16_t)hot_y >= height)
+        return -1;
+
+    if (y11_cursor_bo_w != width || y11_cursor_bo_h != height) {
+        y11_scanout_cursor_bo_destroy();
+        if (y11_scanout_cursor_bo_create(width, height) != 0)
+            return -1;
+    }
+
+    for (y = 0; y < height; y++) {
+        memcpy(&y11_cursor_map[y * (y11_cursor_map_pitch / 4u)],
+               &argb[(size_t)y * width], (size_t)width * 4u);
+    }
+
+    y11_cursor_w = width;
+    y11_cursor_h = height;
+    y11_cursor_hot_x = hot_x;
+    y11_cursor_hot_y = hot_y;
+
+    for (out = y11_drm_outputs(); out != NULL; out = out->next) {
+        if (drmModeSetCursor(out->drm_fd, out->crtc_id,
+                             y11_cursor_handle, width, height) != 0) {
+            y11_scanout_set_cursor_default();
+            return -1;
+        }
+    }
+    y11_scanout_move_cursor(y11_input_pointer()->root_x,
+                            y11_input_pointer()->root_y);
+    return 0;
+}
+
+/* Restore the built-in arrow (hot spot 0,0). */
+void y11_scanout_set_cursor_default(void)
+{
+    uint16_t w = 32, h = 32;
+
+    (void)y11_scanout_set_cursor(y11_cursor_arrow_pixels(&w, &h),
+                                 w, h, 0, 0);
+}
+
+static void y11_scanout_cursor_init(int fd)
+{
+    (void)fd;
+    y11_scanout_set_cursor_default();
 }
 
 /* ---- dirty tracking ---------------------------------------------------------- */
@@ -348,10 +454,6 @@ int y11_scanout_init(y11_drawable_t *root)
 
     y11_scanout_cursor_init(out->drm_fd);
     if (y11_cursor_handle != 0) {
-        for (; out != NULL; out = out->next) {
-            (void)drmModeSetCursor(out->drm_fd, out->crtc_id,
-                                  y11_cursor_handle, 64, 64);
-        }
         y11_scanout_move_cursor(y11_input_pointer()->root_x,
                                 y11_input_pointer()->root_y);
     }
@@ -378,7 +480,8 @@ void y11_scanout_restore(void)
         out->back_buffer = 1;
         if (y11_cursor_handle != 0) {
             (void)drmModeSetCursor(out->drm_fd, out->crtc_id,
-                                   y11_cursor_handle, 64, 64);
+                                   y11_cursor_handle,
+                                   y11_cursor_w, y11_cursor_h);
         }
     }
     y11_scanout_mark_dirty(0, 0, y11_scanout_root->width,
@@ -392,25 +495,17 @@ void y11_scanout_move_cursor(int32_t x, int32_t y)
 
     if (y11_cursor_handle == 0)
         return;
+    /* KMS positions the image's top-left corner; X11 semantics put the
+     * cursor's hot spot on the pointer, so offset by the hot spot. */
+    x -= y11_cursor_hot_x;
+    y -= y11_cursor_hot_y;
     for (out = y11_drm_outputs(); out != NULL; out = out->next)
         (void)drmModeMoveCursor(out->drm_fd, out->crtc_id, x, y);
 }
 
 void y11_scanout_shutdown(void)
 {
-    if (y11_cursor_handle != 0 && y11_drm_outputs() != NULL) {
-        struct y11_output *out;
-        int fd = y11_drm_outputs()->drm_fd;
-        struct drm_mode_destroy_dumb d = { .handle = y11_cursor_handle };
-
-        for (out = y11_drm_outputs(); out != NULL; out = out->next)
-            (void)drmModeSetCursor(out->drm_fd, out->crtc_id, 0, 0, 0);
-        if (y11_cursor_map != NULL)
-            munmap(y11_cursor_map, y11_cursor_map_size);
-        y11_cursor_map = NULL;
-        (void)drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &d);
-        y11_cursor_handle = 0;
-    }
+    y11_scanout_cursor_bo_destroy();
     /* Hand the CRTCs back to the console before the buffers die. */
     y11_drm_restore_console();
     y11_scanout_root = NULL;

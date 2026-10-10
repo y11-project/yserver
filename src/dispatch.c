@@ -887,11 +887,16 @@ static int y11_dispatch_create_glyph_cursor(struct y11_client *c,
         y11_dispatch_send_error(c, Y11_ERR_BAD_FONT, source_font, pkt[0]);
         return 0;
     }
-    if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+    /*
+     * Glyph cursors have no rasterized image in y11; register a stub
+     * so DefineCursor/FreeCursor bookkeeping works and resolving
+     * falls back to the built-in arrow.
+     */
+    if (y11_cursor_create(cid, c, 0, 0, 0, 0, NULL, 0) != 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
         return 0;
     }
-    (void)shape;                /* cursor shapes are decorative in y11 */
+    (void)shape;                /* glyph shapes are decorative in y11 */
     return 0;                   /* no reply */
 }
 
@@ -918,7 +923,12 @@ static int y11_dispatch_create_cursor(struct y11_client *c,
         y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP, mask, pkt[0]);
         return 0;
     }
-    if (y11_resource_add(cid, Y11_RESOURCE_CURSOR, c) != 0) {
+    /*
+     * Core pixmap cursors have no rasterized image in y11; register a
+     * stub so DefineCursor/FreeCursor bookkeeping works and resolving
+     * falls back to the built-in arrow.
+     */
+    if (y11_cursor_create(cid, c, 0, 0, 0, 0, NULL, 0) != 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
         return 0;
     }
@@ -941,7 +951,7 @@ static int y11_dispatch_free_cursor(struct y11_client *c,
         y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR, cid, pkt[0]);
         return 0;
     }
-    y11_resource_remove(cid);
+    y11_cursor_destroy(cid);
     return 0;                   /* no reply */
 }
 
@@ -969,8 +979,7 @@ void y11_font_purge_client(struct y11_client *c)
 {
     y11_resource_purge_type(Y11_RESOURCE_FONT, c, y11_colormap_belongs,
                             NULL);
-    y11_resource_purge_type(Y11_RESOURCE_CURSOR, c, y11_colormap_belongs,
-                            NULL);
+    y11_cursor_purge_client(c);
 }
 
 /* ---- XFIXES cursor names ------------------------------------------------------ */

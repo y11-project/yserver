@@ -47,6 +47,8 @@ typedef struct y11_output {
     uint32_t crtc_id;
     uint32_t encoder_id;
     drmModeModeInfo mode;
+    uint32_t mm_width;          /* physical size from the connector (EDID) */
+    uint32_t mm_height;
     int drm_fd;
     y11_drm_fb_t buffers[2];    /* double buffer: 0 and 1 */
     uint8_t back_buffer;        /* index currently being drawn into */

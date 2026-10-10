@@ -218,6 +218,8 @@ struct y11_pixmap {
     bool              is_shm;    /* MIT-SHM pixmaps share client memory */
     bool              is_dri3;   /* DRI3 pixmaps share a DMA-BUF */
     struct y11_dri3_buffer *dri3;
+    unsigned          picture_refs; /* RENDER pictures still pointing */
+    bool              orphaned;    /* freed by the client, held for refs */
 };
 
 /*
@@ -284,8 +286,6 @@ struct y11_gc {
 
 #define Y11_SCREEN_WIDTH       1920u
 #define Y11_SCREEN_HEIGHT      1080u
-#define Y11_SCREEN_MM_WIDTH    508u
-#define Y11_SCREEN_MM_HEIGHT   285u
 #define Y11_SCREEN_ROOT        ((yid_t)0x00000021u)
 #define Y11_SCREEN_COLORMAP    ((yid_t)0x00000022u)
 #define Y11_SCREEN_VISUAL      ((yid_t)0x00000020u)
@@ -551,6 +551,7 @@ struct y11_window {
     yid_t               background_pixmap;  /* None (0), ParentRelative (1), or pixmap */
     bool                has_bg_pixel;
     uint32_t            border_pixel;
+    yid_t               cursor_id;          /* 0 = inherit from parent */
 
     /* Event subscriptions */
     uint32_t            all_event_masks;    /* bitwise OR of all client masks */
@@ -699,6 +700,10 @@ int  y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
                          size_t len, size_t data_off);
 void y11_pixmap_destroy(void *ptr);
 void y11_pixmap_purge_client(struct y11_client *c);
+/* Unref for deferred frees: orphans (client-freed but still referenced
+ * by RENDER pictures) are held until their last picture goes away. */
+void y11_pixmap_unref(void *ptr);
+void y11_pixmap_picture_released(y11_drawable_t *d);
 
 /* ---- src/gc.c ------------------------------------------------------------------ */
 
@@ -870,9 +875,34 @@ uint32_t y11_input_event_time(void);
 extern uint16_t y11_screen_width;
 extern uint16_t y11_screen_height;
 
+/* Physical screen size in millimeters.  Set from the DRM connector's
+ * EDID-derived dimensions when scanout is active; otherwise computed
+ * for a standard 96 DPI screen so clients resolve sane DPI values. */
+extern uint16_t y11_screen_width_mm;
+extern uint16_t y11_screen_height_mm;
+
 /* Scanout hooks (src/scanout.c): no-ops without hardware. */
 void y11_scanout_mark_dirty(int32_t x, int32_t y, uint32_t w, uint32_t h);
+
+/* Client-defined cursors (src/cursor.c). */
+int  y11_cursor_create(yid_t id, struct y11_client *owner,
+                       uint16_t width, uint16_t height,
+                       int16_t hot_x, int16_t hot_y,
+                       const uint32_t *pixels, size_t stride);
+void y11_cursor_destroy(yid_t id);
+void y11_cursor_purge_client(struct y11_client *c);
+/* Attach a cursor to a window; 0 inherits from the parent.  -1 on an
+ * unknown cursor id. */
+int  y11_cursor_set_window(struct y11_window *win, yid_t cursor);
+/* Re-resolve the cursor under the pointer after motion or changes. */
+void y11_cursor_refresh(void);
 void y11_scanout_move_cursor(int32_t x, int32_t y);
+/* Upload a client cursor image (ARGB, X pixel order) to the cursor
+ * plane; returns -1 when KMS rejects the size or no output exists. */
+int  y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
+                            uint16_t height, int16_t hot_x, int16_t hot_y);
+/* Restore the built-in arrow. */
+void y11_scanout_set_cursor_default(void);
 
 /* ---- src/input.c ----------------------------------------------------------------- */
 

@@ -223,6 +223,8 @@ int y11_drm_init(struct y11_session *s)
         out->crtc_id = crtc_id;
         out->encoder_id = encoder_id;
         out->mode = *mode;
+        out->mm_width = conn->mmWidth;
+        out->mm_height = conn->mmHeight;
         out->drm_fd = s->drm_card_fd;
         out->back_buffer = 1;   /* so the first flush draws into 0 */
 

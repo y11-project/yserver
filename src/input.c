@@ -368,6 +368,8 @@ static void y11_input_do_motion(int16_t x, int16_t y)
 
     /* The hardware cursor follows without touching the scanout. */
     y11_scanout_move_cursor(x, y);
+    /* A different window under the pointer may own a cursor. */
+    y11_cursor_refresh();
 
     if (grab != NULL) {
         /* An active grab takes strict priority: no crossing events. */

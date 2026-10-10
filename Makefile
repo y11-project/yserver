@@ -25,7 +25,7 @@ FreeBSD_SEATLIB = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
 HDRS = include/y11.h include/y11_wire.h include/y11_drm.h include/libseat.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o src/xkb.o
+OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o src/xkb.o src/cursor.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -119,3 +119,6 @@ install: all
 	install -m 0755 y11 $(DESTDIR)$(BINDIR)/y11
 
 .PHONY: all clean install
+
+src/cursor.o: src/cursor.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/cursor.c -o $@

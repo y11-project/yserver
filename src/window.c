@@ -35,6 +35,8 @@ static void y11_window_destroy_tree(struct y11_window *win);
 /* Screen geometry: defaults, overridden by the hardware output mode. */
 uint16_t y11_screen_width = (uint16_t)Y11_SCREEN_WIDTH;
 uint16_t y11_screen_height = (uint16_t)Y11_SCREEN_HEIGHT;
+uint16_t y11_screen_width_mm = 0;    /* filled in from KMS or 96 DPI */
+uint16_t y11_screen_height_mm = 0;
 
 /* ---- small helpers --------------------------------------------------------- */
 
@@ -529,10 +531,12 @@ struct y11_cwa_values {
     yid_t    background_pixmap;
     uint32_t border_pixel;
     uint32_t event_mask;
+    yid_t    cursor;
     int have_background;        /* a background pixel was explicitly specified */
     int have_bg_pixmap;         /* a background pixmap was explicitly specified */
     int have_border;
     int have_event_mask;
+    int have_cursor;
     int override_redirect;
     int have_override;
 };
@@ -577,6 +581,10 @@ static void y11_window_parse_cwa(uint32_t mask, const uint8_t *vals,
             case 11:            /* event-mask */
                 out->event_mask = v;
                 out->have_event_mask = 1;
+                break;
+            case 14:            /* cursor */
+                out->cursor = v;
+                out->have_cursor = 1;
                 break;
             default:            /* accepted and ignored (headless) */
                 break;
@@ -905,6 +913,21 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
     y11_window_attach_top(parent, win);
     y11_window_recompute_abs(win);
 
+    if (vals.have_cursor) {
+        if (vals.cursor != 0 &&
+            y11_resource_get(vals.cursor, Y11_RESOURCE_CURSOR) == NULL) {
+            y11_window_detach(win);
+            y11_resource_remove(win->id);
+            y11_window_free_drawable(win);
+            y11_window_free_subs(win);
+            free(win);
+            y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR, vals.cursor,
+                                    pkt[0]);
+            return 0;
+        }
+        win->cursor_id = vals.cursor;
+    }
+
     if (vals.have_event_mask) {
         err = y11_window_apply_event_mask(win, c, vals.event_mask);
         if (err != 0) {
@@ -993,6 +1016,16 @@ int y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
         win->border_pixel = vals.border_pixel;
     if (vals.have_override)
         win->override_redirect = vals.override_redirect != 0;
+    if (vals.have_cursor) {
+        if (vals.cursor != 0 &&
+            y11_resource_get(vals.cursor, Y11_RESOURCE_CURSOR) == NULL) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_CURSOR, vals.cursor,
+                                    pkt[0]);
+            return 0;
+        }
+        win->cursor_id = vals.cursor;
+        y11_cursor_refresh();
+    }
 
     if (vals.have_event_mask) {
         err = y11_window_apply_event_mask(win, c, vals.event_mask);
@@ -1003,6 +1036,11 @@ int y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
     }
     return 0;                   /* no reply */
 }
+
+/*
+ * DefineCursor arrives as ChangeWindowAttributes with CWCursor in the
+ * core protocol (there is no separate request), handled above.
+ */
 
 /* GetWindowAttributes (opcode 3): a 44-byte extra-large reply. */
 int y11_window_req_get_attributes(struct y11_client *c, const uint8_t *pkt,

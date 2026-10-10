@@ -419,6 +419,12 @@ int y11_server_init(struct y11_server *srv, unsigned display)
     return 0;
 }
 
+/* Physical millimeters for a standard 96 DPI screen of px pixels. */
+static uint16_t y11_dpi96_mm(uint32_t px)
+{
+    return (uint16_t)((px * 254u + 479u) / 960u);
+}
+
 /* mkdir -p equivalent so --log-dir works without setup. */
 static void y11_mkdir_p(const char *path)
 {
@@ -552,8 +558,28 @@ int main(int argc, char **argv)
             y11_screen_width = (uint16_t)out->mode.hdisplay;
             y11_screen_height = (uint16_t)out->mode.vdisplay;
             srv.drm_fd = y11_g_session.drm_card_fd;
+            /*
+             * The connector carries the EDID-derived physical size;
+             * clients use it (the connection setup's width_in_mm) to
+             * compute the real DPI.  Virtual outputs often report 0,
+             * in which case the 96 DPI fallback below fills it in.
+             */
+            if (out->mm_width > 0 && out->mm_width <= 0xffffu)
+                y11_screen_width_mm = (uint16_t)out->mm_width;
+            if (out->mm_height > 0 && out->mm_height <= 0xffffu)
+                y11_screen_height_mm = (uint16_t)out->mm_height;
         }
     }
+
+    /*
+     * Without a connector size (headless screen, virtual output with
+     * no EDID), report dimensions matching a standard 96 DPI display
+     * so clients' DPI math lands on the usual 96 instead of nonsense.
+     */
+    if (y11_screen_width_mm == 0)
+        y11_screen_width_mm = y11_dpi96_mm(y11_screen_width);
+    if (y11_screen_height_mm == 0)
+        y11_screen_height_mm = y11_dpi96_mm(y11_screen_height);
 
     if (y11_window_init() != 0) {
         fprintf(stderr, "y11: cannot create the root window\n");
