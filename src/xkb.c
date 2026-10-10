@@ -28,6 +28,9 @@
  *     backend on that); y11 reports device 1.
  * Wire layouts follow /usr/include/X11/extensions/XKBproto.h and the
  * xcb-generated /usr/include/xcb/xkb.h byte for byte.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

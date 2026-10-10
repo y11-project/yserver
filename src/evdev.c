@@ -4,6 +4,9 @@
  * Scans /dev/input/event* devices and polls them in the main server loop.
  * Translates evdev key codes, buttons, relative pointer motions and
  * absolute tablet/mouse events into the y11_input_* subsystem.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <sys/types.h>

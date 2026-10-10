@@ -12,6 +12,9 @@
  * When the seat cannot be acquired (another display server owns DRM
  * master, or no seat manager is running), all of this is inert and
  * y11 runs headless over its UNIX sockets exactly as before.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #ifndef Y11_DRM_H

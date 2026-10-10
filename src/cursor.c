@@ -12,6 +12,9 @@
  * The image pixels are X pixel-order uint32s (A<<24|R<<16|G<<8|B),
  * which is exactly the KMS ARGB8888 cursor plane layout, so scanout
  * copies them verbatim (src/scanout.c).
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

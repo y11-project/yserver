@@ -3,6 +3,9 @@
  *
  * A chained hash map from yid_t to typed resources (windows, pixmaps,
  * GCs), so any request referencing a resource id resolves in O(1).
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

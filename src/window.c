@@ -20,6 +20,9 @@
  * ConfigureWindow requests on its non-override-redirect children are
  * forwarded as MapRequest and ConfigureRequest events instead of being
  * applied directly.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

@@ -10,6 +10,9 @@
  *
  * Without a seat (another display server owns DRM master) every entry
  * point is a no-op and y11 stays headless.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

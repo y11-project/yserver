@@ -8,6 +8,9 @@
  *
  * Attributes y11 does not act on yet (tiles, stipples, dashes, fonts)
  * are accepted and ignored so headless clients keep working.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

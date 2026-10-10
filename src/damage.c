@@ -10,6 +10,9 @@
  * descendants.
  *
  * Every Expose carries count 0: one event per window per dirty mark.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <string.h>

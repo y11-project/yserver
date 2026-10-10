@@ -8,6 +8,9 @@
  * PropertyNotify event.  EWMH root properties (_NET_SUPPORTED and
  * friends) live on the root window and are readable by window
  * managers, exactly like on a full X server.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

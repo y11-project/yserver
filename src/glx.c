@@ -14,6 +14,9 @@
  * (src/glx/glxext.c): GetVisualConfigs returns 18 fixed properties
  * per visual (__GLX_MIN_CONFIG_PROPS); GetFBConfigs returns tagged
  * attribute/value pairs.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdio.h>

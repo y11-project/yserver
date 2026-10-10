@@ -13,6 +13,9 @@
  * MSC is a per-server counter advanced once per presented frame; UST
  * is the microsecond timestamp of the presentation.  PresentNotifyMSC
  * lets clients wait for a specific MSC (vsync throttling).
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

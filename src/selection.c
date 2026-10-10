@@ -12,6 +12,9 @@
  *
  * All three selection events are addressed, not masked: they go to
  * the specific client that owns the selection or made the request.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

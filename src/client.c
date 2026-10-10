@@ -3,6 +3,9 @@
  *
  * Handles client allocation, the per-client request reassembly ("ring")
  * buffer, and the X11 connection setup handshake.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

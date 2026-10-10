@@ -13,6 +13,9 @@
  * master directly on an idle console (the kernel allows it when no
  * other master exists); if that also fails, y11 runs headless over
  * its UNIX sockets and never disturbs a running session.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

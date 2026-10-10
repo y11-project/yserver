@@ -13,6 +13,9 @@
  * every path bounds-checks against the segment size so a hostile
  * client cannot make y11 read or write outside the mapping.  On
  * disconnect every segment is detached with shmdt(2).
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

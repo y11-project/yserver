@@ -11,6 +11,9 @@
  *
  * Supported ops: Clear (0), Src (1) and Over (3), the ones text
  * rendering and icon compositing actually use.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

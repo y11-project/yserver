@@ -6,6 +6,9 @@
  * event code, byte 1 an event-specific detail, and bytes 2-3 the target
  * client's current sequence number (low 16 bits).  Events are queued
  * non-blockingly into the target client's output ring buffer.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdio.h>

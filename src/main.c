@@ -6,6 +6,9 @@
  * symbolic link /tmp/.y11-unix/Y0 -> /tmp/.X11-unix/X0 is maintained.
  * The daemon catches SIGINT/SIGTERM via sigaction and unlinks the
  * sockets after a clean shutdown.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

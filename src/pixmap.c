@@ -5,6 +5,9 @@
  * registered in the global XID resource table.  Depth 1 pixmaps are
  * stored in the same 32-bit rows (pixels 0 and 1); the depth only
  * matters at the wire boundary, where render.c converts formats.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

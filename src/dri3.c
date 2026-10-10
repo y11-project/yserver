@@ -12,6 +12,9 @@
  *
  * GEM and Prime ioctls are unprivileged operations on the render
  * node; no DRM master is needed for any of this.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

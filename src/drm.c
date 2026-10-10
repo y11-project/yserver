@@ -10,6 +10,9 @@
  * All CRTC programming requires DRM master, which the session module
  * acquires through the seat.  Without master nothing here can program
  * hardware, and y11 stays headless.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <errno.h>

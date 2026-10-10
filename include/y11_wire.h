@@ -7,6 +7,9 @@
  * over 4-byte-aligned buffers.  Multi-byte fields are always accessed
  * through the little-endian helpers at the bottom of this file, making
  * the server independent of host byte order.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #ifndef Y11_WIRE_H

@@ -7,6 +7,9 @@
  * width * 4).  Solid rectangle fills, blits and image transfers apply
  * the GC's raster operation (GXclear .. GXset) and plane mask, and are
  * clipped to the drawable bounds and the GC clip rectangles.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>

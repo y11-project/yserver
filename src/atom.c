@@ -5,6 +5,9 @@
  * held in a static array.  Atoms 69 and up are dynamic and live in a
  * simple chained hash table.  InternAtom (opcode 16) and GetAtomName
  * (opcode 17) are implemented here.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>
