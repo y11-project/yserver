@@ -524,7 +524,13 @@ static int y11_shm_create_pixmap(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
-    if (width == 0 || height == 0 || (depth != 1 && depth != 24)) {
+    /*
+     * The same depth set the core CreatePixmap accepts (1/4/8/16/24/32);
+     * GTK's icon-group surfaces use SHM pixmaps of depth 32.
+     */
+    if (width == 0 || height == 0 ||
+        (depth != 1 && depth != 4 && depth != 8 && depth != 16 &&
+         depth != 24 && depth != 32)) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, depth, pkt[0]);
         return 0;
     }

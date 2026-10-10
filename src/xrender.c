@@ -71,24 +71,31 @@ struct y11_pictformat {
 };
 
 /*
- * The formats a modern server exposes: ARGB32 and RGB24 for the
- * window visual, A8 for glyph masks.  RGB24 is the picture format of
- * the root visual.
+ * The formats a modern server exposes: A1 for bitmap masks (GTK's
+ * window-icon mask needs it via cairo_xlib_surface_create_for_bitmap),
+ * A4 and A8 for glyph masks, ARGB32 and RGB24 for the window visual.
+ * RGB24 is the picture format of the root visual.
  */
 enum {
-    Y11_PFMT_ARGB32 = 0,
-    Y11_PFMT_RGB24  = 1,
+    Y11_PFMT_A1     = 0,
+    Y11_PFMT_A4     = 1,
     Y11_PFMT_A8     = 2,
-    Y11_PFMT_COUNT  = 3
+    Y11_PFMT_ARGB32 = 3,
+    Y11_PFMT_RGB24  = 4,
+    Y11_PFMT_COUNT  = 5
 };
 
 static const struct y11_pictformat y11_pict_formats[Y11_PFMT_COUNT] = {
-    { 0x00000101, 1, 32,
+    { 0x00000100, 1, 1,          /* A1: depth 1, alpha 0/0x1 */
+      0, 0, 0, 0, 0, 0, 0, 0x01 },
+    { 0x00000101, 1, 4,          /* A4: depth 4, alpha 0/0xf */
+      0, 0, 0, 0, 0, 0, 0, 0x0f },
+    { 0x00000102, 1, 8,          /* A8: depth 8, alpha 0/0xff */
+      0, 0, 0, 0, 0, 0, 0, 0xff },
+    { 0x00000103, 1, 32,         /* ARGB32 */
       16, 0xff, 8, 0xff, 0, 0xff, 24, 0xff },
-    { 0x00000102, 1, 24,
-      16, 0xff, 8, 0xff, 0, 0xff, 0, 0 },
-    { 0x00000103, 1, 8,
-      0, 0, 0, 0, 0, 0, 0, 0xff }
+    { 0x00000104, 1, 24,         /* RGB24: the root visual's format */
+      16, 0xff, 8, 0xff, 0, 0xff, 0, 0 }
 };
 
 #define Y11_PFMT_VISUAL (y11_pict_formats[Y11_PFMT_RGB24].id)
@@ -332,7 +339,7 @@ static int y11_render_query_version(struct y11_client *c,
     rep.hdr.type = 1;
     y11_wire_put32(&rep.hdr.length, 0);
     y11_wire_put32(&rep.major, 0);
-    y11_wire_put32(&rep.minor, 10);
+    y11_wire_put32(&rep.minor, 11);        /* RENDER 0.11: what real servers run */
     y11_dispatch_send_reply(c, &rep, sizeof(rep));
     return 0;
 }
