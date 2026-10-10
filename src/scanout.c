@@ -30,15 +30,20 @@ struct y11_scanout_damage {
 
 static struct y11_scanout_damage y11_buf_dirty[2];
 
-/* Hardware cursor (legacy KMS API, ARGB).  The BO is recreated when
- * a client cursor of a different size is uploaded. */
+/* Hardware cursor (legacy KMS API, ARGB).  The BO is always the
+ * driver's advertised cursor plane size (i915 only accepts 64x64 or
+ * larger power-of-two squares, so smaller images are padded into the
+ * plane's top-left corner, exactly like Xorg's modesetting driver).
+ * The BO is recreated when a client cursor of a different size is
+ * uploaded. */
 static uint32_t y11_cursor_handle;
 static uint32_t y11_cursor_map_size;
 static uint32_t y11_cursor_map_pitch;
 static uint32_t *y11_cursor_map;
-static uint16_t y11_cursor_w, y11_cursor_h;
+static uint16_t y11_cursor_w, y11_cursor_h;    /* image size */
+static uint16_t y11_cursor_bo_w, y11_cursor_bo_h;       /* BO size */
+static uint16_t y11_cursor_plane_w, y11_cursor_plane_h;  /* plane caps */
 static int16_t  y11_cursor_hot_x, y11_cursor_hot_y;
-static uint32_t y11_cursor_bo_w, y11_cursor_bo_h;
 
 union y11_cursor_pixel {
     uint32_t argb;
@@ -172,12 +177,15 @@ fail:
 /*
  * Upload a client cursor image to the cursor plane.  Pixels arrive in
  * X pixel order (A<<24|R<<16|G<<8|B), which is the KMS ARGB8888
- * layout, so rows copy verbatim.  The BO is recreated when the
- * geometry changes; if KMS rejects the size, the arrow stays.
+ * layout, so rows copy verbatim.  The image is padded into the
+ * driver's fixed-size cursor BO; if KMS rejects it anyway, the
+ * recovery guard keeps the failure from recursing through the
+ * default-restore path into a stack overflow.
  */
 int y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
                            uint16_t height, int16_t hot_x, int16_t hot_y)
 {
+    static int recovering;
     struct y11_output *out;
     uint16_t y;
 
@@ -188,13 +196,27 @@ int y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
     if (hot_x < 0 || (uint16_t)hot_x >= width ||
         hot_y < 0 || (uint16_t)hot_y >= height)
         return -1;
+    if (y11_cursor_plane_w == 0 || y11_cursor_plane_h == 0)
+        return -1;              /* caps not queried yet */
+    if (width > y11_cursor_plane_w || height > y11_cursor_plane_h) {
+        if (y11_debug)
+            fprintf(stderr, "y11: cursor %ux%u exceeds the plane's "
+                    "%ux%u, keeping the previous cursor\n",
+                    width, height, y11_cursor_plane_w,
+                    y11_cursor_plane_h);
+        return -1;
+    }
 
-    if (y11_cursor_bo_w != width || y11_cursor_bo_h != height) {
+    if (y11_cursor_bo_w != y11_cursor_plane_w ||
+        y11_cursor_bo_h != y11_cursor_plane_h) {
         y11_scanout_cursor_bo_destroy();
-        if (y11_scanout_cursor_bo_create(width, height) != 0)
+        if (y11_scanout_cursor_bo_create(y11_cursor_plane_w,
+                                         y11_cursor_plane_h) != 0)
             return -1;
     }
 
+    /* Zero the padding, then lay the image into the top-left. */
+    memset(y11_cursor_map, 0, y11_cursor_map_size);
     for (y = 0; y < height; y++) {
         memcpy(&y11_cursor_map[y * (y11_cursor_map_pitch / 4u)],
                &argb[(size_t)y * width], (size_t)width * 4u);
@@ -207,8 +229,17 @@ int y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
 
     for (out = y11_drm_outputs(); out != NULL; out = out->next) {
         if (drmModeSetCursor(out->drm_fd, out->crtc_id,
-                             y11_cursor_handle, width, height) != 0) {
-            y11_scanout_set_cursor_default();
+                             y11_cursor_handle, y11_cursor_plane_w,
+                             y11_cursor_plane_h) != 0) {
+            if (y11_debug)
+                fprintf(stderr, "y11: drmModeSetCursor %ux%u failed: %s"
+                        "\n", y11_cursor_plane_w, y11_cursor_plane_h,
+                        strerror(errno));
+            if (!recovering) {
+                recovering = 1;
+                y11_scanout_set_cursor_default();
+                recovering = 0;
+            }
             return -1;
         }
     }
@@ -228,7 +259,25 @@ void y11_scanout_set_cursor_default(void)
 
 static void y11_scanout_cursor_init(int fd)
 {
-    (void)fd;
+    struct drm_get_cap cap;
+    uint64_t cw = 64, ch = 64;   /* the size i915 and most drivers take */
+
+    memset(&cap, 0, sizeof(cap));
+    cap.capability = DRM_CAP_CURSOR_WIDTH;
+    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0 &&
+        cap.value <= 256)
+        cw = cap.value;
+    memset(&cap, 0, sizeof(cap));
+    cap.capability = DRM_CAP_CURSOR_HEIGHT;
+    if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0 &&
+        cap.value <= 256)
+        ch = cap.value;
+    y11_cursor_plane_w = (uint16_t)cw;
+    y11_cursor_plane_h = (uint16_t)ch;
+    if (y11_debug)
+        fprintf(stderr, "y11: cursor plane %ux%u\n",
+                y11_cursor_plane_w, y11_cursor_plane_h);
+
     y11_scanout_set_cursor_default();
 }
 
@@ -481,7 +530,8 @@ void y11_scanout_restore(void)
         if (y11_cursor_handle != 0) {
             (void)drmModeSetCursor(out->drm_fd, out->crtc_id,
                                    y11_cursor_handle,
-                                   y11_cursor_w, y11_cursor_h);
+                                   y11_cursor_plane_w,
+                                   y11_cursor_plane_h);
         }
     }
     y11_scanout_mark_dirty(0, 0, y11_scanout_root->width,
