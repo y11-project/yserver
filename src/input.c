@@ -616,7 +616,33 @@ void y11_input_key(int press, uint8_t keycode)
 
 /* ---- focus events ---------------------------------------------------------------------- */
 
-static void y11_input_focus_event(uint8_t type, struct y11_window *win)
+/*
+ * Focus event detail for a focus move from `from` to `to`, per the
+ * relationship of the two windows: moving down the tree reports
+ * NotifyInferior to the loser and NotifyAncestor to the winner, moving up
+ * the reverse, and unrelated windows NotifyNonlinear on both sides.  GTK
+ * treats a NotifyInferior FocusOut as "focus stays within this toplevel",
+ * which is what keeps input alive when a toplevel moves the X focus to
+ * its hidden input-only focus window (EWMH _NET_WM_USER_TIME_WINDOW).
+ */
+static void y11_focus_details(const struct y11_window *from,
+                              const struct y11_window *to,
+                              uint8_t *out_detail, uint8_t *in_detail)
+{
+    if (y11_window_is_ancestor(from, to)) {
+        *out_detail = Y11_NOTIFY_INFERIOR;
+        *in_detail = Y11_NOTIFY_ANCESTOR;
+    } else if (y11_window_is_ancestor(to, from)) {
+        *out_detail = Y11_NOTIFY_ANCESTOR;
+        *in_detail = Y11_NOTIFY_INFERIOR;
+    } else {
+        *out_detail = Y11_NOTIFY_NONLINEAR;
+        *in_detail = Y11_NOTIFY_NONLINEAR;
+    }
+}
+
+static void y11_input_focus_event(uint8_t type, uint8_t detail,
+                                  struct y11_window *win)
 {
     y11_focus_event ev;
     const struct y11_event_sub *sub;
@@ -628,9 +654,11 @@ static void y11_input_focus_event(uint8_t type, struct y11_window *win)
         {
             uint8_t *b = (uint8_t *)&ev;
             b[0] = type;
+            b[1] = detail;
         }
         y11_wire_put32(&ev.window, win->id);
-        ev.mode = 0;             /* NotifyNormal */
+        ev.mode = y11_grab_keyboard_active() != NULL ? 3 : 0;
+                                 /* NotifyWhileGrabbed : NotifyNormal */
         y11_event_dispatch32(sub->client, &ev, sizeof(ev));
     }
 }
@@ -670,13 +698,19 @@ int y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
     old = (y11_keyboard_state.focus_window > 1)
               ? y11_window_get(y11_keyboard_state.focus_window)
               : NULL;
-    if (old != NULL && old != win)
-        y11_input_focus_event(Y11_EVT_FOCUS_OUT, old);
+    if (old != win) {
+        uint8_t out_detail = Y11_NOTIFY_NONLINEAR;
+        uint8_t in_detail = Y11_NOTIFY_NONLINEAR;
+
+        y11_focus_details(old, win, &out_detail, &in_detail);
+        if (old != NULL)
+            y11_input_focus_event(Y11_EVT_FOCUS_OUT, out_detail, old);
+        if (win != NULL)
+            y11_input_focus_event(Y11_EVT_FOCUS_IN, in_detail, win);
+    }
 
     y11_keyboard_state.focus_window = win != NULL ? win->id : focus_id;
     y11_keyboard_state.revert_to = revert_to;
-    if (win != NULL)
-        y11_input_focus_event(Y11_EVT_FOCUS_IN, win);
 
     return 0;                   /* no reply */
 }
