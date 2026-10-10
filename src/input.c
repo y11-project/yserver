@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include "y11.h"
 #include "y11_wire.h"
@@ -513,6 +514,62 @@ uint16_t y11_input_modifier_mask_for(uint8_t keycode)
     return 0;
 }
 
+/* ---- key autorepeat -------------------------------------------------------------------- */
+
+/*
+ * Server-side autorepeat: clients get press/release pairs while a
+ * non-modifier key is held, matching the repeat delay and interval the
+ * XKB GetControls reply advertises.  The kernel's VT-layer repeat does
+ * not reach the evdev stream while the session owns the devices.
+ */
+#define Y11_REPEAT_DELAY_MS 660
+#define Y11_REPEAT_RATE_MS  40
+
+static struct {
+    int active;
+    uint8_t keycode;
+    int64_t deadline_ms;
+} y11_key_repeat;
+
+static int64_t y11_now_ms(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void y11_key_repeat_arm(uint8_t keycode)
+{
+    y11_key_repeat.active = 1;
+    y11_key_repeat.keycode = keycode;
+    y11_key_repeat.deadline_ms = y11_now_ms() + Y11_REPEAT_DELAY_MS;
+}
+
+/* Milliseconds until the repeat fires, or -1 when nothing is pending. */
+int y11_input_repeat_timeout(void)
+{
+    int64_t due;
+
+    if (!y11_key_repeat.active)
+        return -1;
+    due = y11_key_repeat.deadline_ms - y11_now_ms();
+    return due < 0 ? 0 : (int)due;
+}
+
+/* Fire one repeat (synthetic release+press) and reschedule. */
+void y11_input_repeat_fire(void)
+{
+    uint8_t keycode = y11_key_repeat.keycode;
+
+    y11_key_repeat.active = 0;
+    y11_input_key(0, keycode);
+    y11_input_key(1, keycode);
+    /* The press re-armed the initial delay; repeats run at the rate. */
+    if (y11_key_repeat.active && y11_key_repeat.keycode == keycode)
+        y11_key_repeat.deadline_ms = y11_now_ms() + Y11_REPEAT_RATE_MS;
+}
+
 /* Drop all pressed-key and modifier state (VT switch: held keys
  * lose their release events while the devices are revoked). */
 void y11_input_reset_keys(void)
@@ -520,6 +577,7 @@ void y11_input_reset_keys(void)
     memset(y11_keyboard_state.key_state, 0,
            sizeof(y11_keyboard_state.key_state));
     y11_keyboard_state.modifier_mask = 0;
+    y11_key_repeat.active = 0;
 }
 
 void y11_input_key(int press, uint8_t keycode)
@@ -556,6 +614,13 @@ void y11_input_key(int press, uint8_t keycode)
 
         if (vt > 0 && y11_session_request_vt_switch(vt) == 0)
             return;
+    }
+
+    if (press) {
+        if (y11_input_modifier_mask_for(keycode) == 0 && !y11_key_repeat.active)
+            y11_key_repeat_arm(keycode);
+    } else if (y11_key_repeat.active && y11_key_repeat.keycode == keycode) {
+        y11_key_repeat.active = 0;
     }
 
     {

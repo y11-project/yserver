@@ -930,6 +930,10 @@ void y11_input_keysyms_for(uint8_t keycode, uint32_t out[2]);
 uint16_t y11_input_modifier_mask_for(uint8_t keycode);
 /* Drop all pressed-key and modifier state (VT switch). */
 void y11_input_reset_keys(void);
+
+/* Server-side key autorepeat: poll(2) timeout and repeat dispatch. */
+int y11_input_repeat_timeout(void);
+void y11_input_repeat_fire(void);
 /* Minimal XKEYBOARD extension (XKB) request dispatcher. */
 int  y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                  size_t data_off);

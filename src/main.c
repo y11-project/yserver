@@ -275,7 +275,7 @@ void y11_server_run(struct y11_server *srv)
             n++;
         }
 
-        ready = poll(fds, n, -1);
+        ready = poll(fds, n, y11_input_repeat_timeout());
         if (ready < 0) {
             if (errno == EINTR) {
                 /* A signal (VT switch and friends) may only set flags
@@ -287,6 +287,11 @@ void y11_server_run(struct y11_server *srv)
             perror("y11: poll");
             break;
         }
+
+        /* Held-key autorepeat (checked after event delivery so a
+         * physical release in this batch cancels the pending repeat). */
+        if (y11_input_repeat_timeout() == 0)
+            y11_input_repeat_fire();
 
         if ((fds[0].revents & POLLIN) != 0)
             y11_server_accept(srv);
