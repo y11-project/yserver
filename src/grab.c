@@ -7,6 +7,9 @@
  * activate implicitly when a matching button or key press arrives
  * while the pointer or focus is inside the grab window's hierarchy; a
  * passive pointer grab ends automatically when all buttons release.
+ *
+ * Copyright (c) 2026 The Y11 Project
+ * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdlib.h>
@@ -583,7 +586,12 @@ int y11_grab_req_keyboard(struct y11_client *c, const uint8_t *pkt,
     status = y11_grab_check_window(grab_window, 1);
     if (status != Y11_GRAB_SUCCESS)
         goto reply;
-    if (y11_keyboard_grab.active) {
+    /*
+     * A grab by the client that already owns it re-arms the grab
+     * (matching the reference servers); rofi re-grabs on every show
+     * and treated AlreadyGrabbed as a broken keyboard forever.
+     */
+    if (y11_keyboard_grab.active && y11_keyboard_grab.client != c) {
         status = Y11_GRAB_ALREADY;
         goto reply;
     }
