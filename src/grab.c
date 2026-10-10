@@ -587,9 +587,7 @@ int y11_grab_req_keyboard(struct y11_client *c, const uint8_t *pkt,
     if (status != Y11_GRAB_SUCCESS)
         goto reply;
     /*
-     * A grab by the client that already owns it re-arms the grab
-     * (matching the reference servers); rofi re-grabs on every show
-     * and treated AlreadyGrabbed as a broken keyboard forever.
+     * A grab by the client that already owns it re-arms the grab.
      */
     if (y11_keyboard_grab.active && y11_keyboard_grab.client != c) {
         status = Y11_GRAB_ALREADY;

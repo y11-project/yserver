@@ -528,8 +528,7 @@ static int y11_shm_create_pixmap(struct y11_client *c, const uint8_t *pkt,
     }
 
     /*
-     * The same depth set the core CreatePixmap accepts (1/4/8/16/24/32);
-     * GTK's icon-group surfaces use SHM pixmaps of depth 32.
+     * The same depth set the core CreatePixmap accepts.
      */
     if (width == 0 || height == 0 ||
         (depth != 1 && depth != 4 && depth != 8 && depth != 16 &&

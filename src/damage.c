@@ -1,15 +1,7 @@
 /*
- * damage.c - Dirty region tracking and Expose dispatch for the Y11
- * display server.
- *
- * When drawing lands on a window's backing buffer, the overwritten
- * content of viewable descendant windows intersecting the region must
- * be repainted, so those windows' clients receive Expose events.
- * When a window's own region becomes visible (mapping), the window's
- * ExposureMask subscribers are notified along with its viewable
- * descendants.
- *
- * Every Expose carries count 0: one event per window per dirty mark.
+ * damage.c - Dirty region tracking and Expose dispatch: drawing that
+ * overwrites viewable descendants sends them Expose; one event per
+ * window per dirty mark (count 0).
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

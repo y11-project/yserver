@@ -1,33 +1,17 @@
 /*
- * xkb.c - Minimal XKEYBOARD (XKB) extension for the Y11 display server.
+ * xkb.c - Minimal XKEYBOARD (XKB) extension: the request set
+ * libxkbcommon-x11 and libX11's XKB parser need (UseExtension,
+ * GetState, GetMap, GetNames, GetControls, GetIndicatorMap,
+ * GetDeviceInfo) to build a keymap from y11's core
+ * keycode/keysym/modifier tables.  Wire layouts follow XKBproto.h
+ * and xcb's xkb.h byte for byte.
  *
- * Clients built on libxkbcommon-x11 (GTK3's GDK, rofi, ...) hard-require
- * the XKB keymap: without it GDK segfaults during display init and rofi
- * reports "No valid backend was found".  This serves the exact request
- * set xkb_x11_keymap_new_from_device() sends (see libxkbcommon's
- * src/x11/keymap.c) with a valid minimal map built from y11's own
- * keycode/keysym/modifier tables.
- *
- * Contract highlights verified against libxkbcommon's parser and Xvfb's
- * actual replies:
- *   - GetMap must report every "required component" bit (0xdf) or the
- *     parse fails outright.  The key-type entry level is 0-based (a
- *     two-level type maps Shift to level 1, NOT 2).
- *   - msb_pos() is applied to the GetMap virtualMods field and to the
- *     GetNames virtualMods/indicators/groupNames fields; libxkbcommon's
- *     msb_pos(0) is undefined, so all of them must be nonzero.
- *   - GetNames must echo which-bits 0x2d0 (type names, kt level names,
- *     key names, vmod names) plus the section-name bits, nTypes must
- *     equal GetMap's nTypes, and firstKey/nKeys must cover the whole
- *     keycode range.
- *   - GetControls must answer numGroups > 0 and the full 92-byte reply
- *     (length 15) since the parser reads the perKeyRepeat bits.
- *   - GetIndicatorMap gets which != 0 with one inert LED entry; its
- *     list is dereferenced for every bit set in "which".
- *   - GetDeviceInfo's deviceID must not read as -1 (rofi refuses the
- *     backend on that); y11 reports device 1.
- * Wire layouts follow /usr/include/X11/extensions/XKBproto.h and the
- * xcb-generated /usr/include/xcb/xkb.h byte for byte.
+ * Parser requirements (all verified byte-level): GetMap must report
+ * every required component bit (0xdf) with 0-based entry levels;
+ * GetMap/GetNames virtualMods, GetNames indicators/groupNames and
+ * GetIndicatorMap which must be nonzero (msb_pos(0) is undefined);
+ * GetNames nTypes must match GetMap and cover the whole keycode
+ * range; GetControls needs numGroups > 0 and the full 92-byte reply.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -417,11 +401,7 @@ static int y11_xkb_get_controls(struct y11_client *c)
     return 0;
 }
 
-/*
- * GetDeviceInfo (minor 24): report core-keyboard device 1 with no
- * buttons and no name.  rofi refuses the whole backend when the id
- * reads back as -1, so the field must be populated.
- */
+/* GetDeviceInfo (minor 24): deviceID must be nonzero. */
 static int y11_xkb_get_device_info(struct y11_client *c)
 {
     uint8_t rep[32];

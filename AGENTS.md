@@ -51,6 +51,25 @@ rendering clients.
 - libseat's API header is vendored at include/libseat.h; the runtime is
   linked by soname (`-l:libseat.so.1`).
 
+## Comments
+
+- Explain *why*, never narrate *what*. Code that states its own
+  purpose — a well-named call, an obvious loop — needs no comment.
+- Concise and non-redundant: one line beats a paragraph. If a sentence
+  only restates the identifiers around it, delete the sentence.
+- No investigation stories. "X segfaults unless...", "verified against
+  Y", "we fixed this after..." — that history belongs in the commit
+  message, not the tree. State the standing requirement instead:
+  `/* deviceID must be nonzero: 0 reads as invalid */`.
+- File headers are 1-3 lines: what the file is, nothing else. No client
+  lists, no bug sagas, no project manifestos.
+- Wire-format facts (offsets, sizes, parser requirements, hardware
+  quirks) are the exception: keep them, one line each, next to the
+  code they describe.
+- The `/* ---- section ---- */` dividers are the only decoration.
+- When a change makes a comment true only with "previously", "now" or
+  "however", rewrite the comment — or delete it.
+
 ## Protocol notes
 
 - ChangeProperty carries its mode in header byte 1 (Xproto.h and xcb

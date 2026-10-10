@@ -75,10 +75,8 @@ struct y11_pictformat {
 };
 
 /*
- * The formats a modern server exposes: A1 for bitmap masks (GTK's
- * window-icon mask needs it via cairo_xlib_surface_create_for_bitmap),
- * A4 and A8 for glyph masks, ARGB32 and RGB24 for the window visual.
- * RGB24 is the picture format of the root visual.
+ * The standard formats: A1 for bitmap masks, A4/A8 for glyph masks,
+ * ARGB32 and RGB24 for windows.  RGB24 is the root visual's format.
  */
 enum {
     Y11_PFMT_A1     = 0,
@@ -471,8 +469,8 @@ static int y11_render_create_picture(struct y11_client *c,
     p->id = pid;
     p->drawable = d;
     p->format = pf;
-    /* Pictures keep the source pixmap alive (libXcursor frees the
-     * pixmap before RenderCreateCursor arrives). */
+    /* Pictures keep the source pixmap alive until the last picture
+     * referencing it is freed. */
     if (d->type == Y11_DRAWABLE_PIXMAP) {
         struct y11_pixmap *pm = (struct y11_pixmap *)d;
 

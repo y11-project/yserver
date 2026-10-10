@@ -2,16 +2,11 @@
  * saver.c - Minimal MIT-SCREEN-SAVER extension for the Y11 display
  * server.
  *
- * xidlehook (the session's idle daemon) dereferences the reply of
- * SaverQueryInfo without checking for the extension, so without this
- * it segfaults at its first idle poll.  y11 answers the two requests
- * idle clients use: QueryVersion and SaverQueryInfo.  The reported
- * idle value is the time since the last device event (keyboard,
- * button or motion), which is what feeds the lock-screen and DPMS
- * timers.  SelectInput and the attribute requests are accepted
- * without effect: y11 never blanks the screen itself.
+ * QueryVersion and QueryInfo; the idle value is the time since the
+ * last device event.  SelectInput and the attribute requests are
+ * accepted without effect: y11 never blanks the screen.
  *
- * Wire layouts follow /usr/include/X11/extensions/saverproto.h.
+ * Wire layouts follow saverproto.h.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -43,8 +38,7 @@ static int y11_saver_query_version(struct y11_client *c)
 /*
  * QueryInfo (minor 1): drawable, then a reply with state, the saver
  * window, til-or-since, idle milliseconds and the event mask.
- * y11 keeps no saver window and never blanks: state Off, window None,
- * kind Blanked.  The idle value drives xidlehook's timers.
+ * State Off, window None, kind Blanked: y11 never blanks.
  */
 static int y11_saver_query_info(struct y11_client *c, const uint8_t *pkt,
                                 size_t len, size_t data_off)

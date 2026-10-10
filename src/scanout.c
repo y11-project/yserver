@@ -274,11 +274,8 @@ static void y11_scanout_cursor_init(int fd)
     if (drmIoctl(fd, DRM_IOCTL_GET_CAP, &cap) == 0 && cap.value > 0)
         ch = cap.value;
     /*
-     * i915 answers these caps with its maximum plane size (256x256),
-     * but the legacy drmModeSetCursor rejects anything above 64x64
-     * with EPERM on hardware like the T2's Ice Lake.  64x64 is the
-     * size the legacy API takes everywhere, and every cursor y11
-     * serves (the 32px arrow, 48px themed cursors) fits inside.
+     * The caps advertise the maximum plane size, but the legacy
+     * drmModeSetCursor only accepts 64x64 everywhere.
      */
     if (cw > 64)
         cw = 64;

@@ -1,8 +1,6 @@
 /*
  * y11.h - Internal definitions for the Y11 display server daemon.
  *
- * The Y11 Project -- Phase 1: Headless Protocol Engine & Handshake.
- *
  * y11 is an ISO C99, POSIX-portable X11-compatible display server.  This
  * header defines the resource identifier type, the per-client connection
  * state and the top-level server object shared between the socket event

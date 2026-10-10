@@ -1571,10 +1571,10 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
         /* RENDER pictures, glyph sets and compositing (byte 1). */
         if (opcode == (uint8_t)Y11_RENDER_EXT_OPCODE)
             return y11_render_req(c, pkt, len, data_off);
-        /* XKEYBOARD: GTK3/rofi hard-require the XKB keymap (byte 1). */
+        /* XKEYBOARD (minor opcode in byte 1). */
         if (opcode == (uint8_t)Y11_XKB_EXT_OPCODE)
             return y11_xkb_req(c, pkt, len, data_off);
-        /* MIT-SCREEN-SAVER: xidlehook's idle source (byte 1). */
+        /* MIT-SCREEN-SAVER (minor opcode in byte 1). */
         if (opcode == (uint8_t)Y11_SAVER_EXT_OPCODE)
             return y11_saver_req(c, pkt, len, data_off);
         /* XFIXES: Mesa's DRI3 loader rejects the render fd unless the

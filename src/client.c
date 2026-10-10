@@ -545,7 +545,7 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
     }
 
     /* Skip the authorization protocol name and data, each padded to a
-     * 4-byte boundary.  Phase 1 accepts any authorization data. */
+     * 4-byte boundary.  Any authorization data is accepted. */
     skip = y11_wire_pad4(y11_wire_get16(&req->auth_proto_len)) +
            y11_wire_pad4(y11_wire_get16(&req->auth_data_len));
     if (c->in_len - *off - sizeof(*req) < skip)

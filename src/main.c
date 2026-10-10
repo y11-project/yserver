@@ -574,11 +574,7 @@ int main(int argc, char **argv)
         }
     }
 
-    /*
-     * Without a connector size (headless screen, virtual output with
-     * no EDID), report dimensions matching a standard 96 DPI display
-     * so clients' DPI math lands on the usual 96 instead of nonsense.
-     */
+    /* No connector size: fall back to a 96 DPI geometry. */
     if (y11_screen_width_mm == 0)
         y11_screen_width_mm = y11_dpi96_mm(y11_screen_width);
     if (y11_screen_height_mm == 0)

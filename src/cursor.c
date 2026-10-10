@@ -1,17 +1,11 @@
 /*
  * cursor.c - Client-defined cursors for the Y11 display server.
  *
- * Cursors carry an ARGB image (from RENDER's CreateCursor, what
- * libXcursor uploads for themed cursors like Borealis) plus a hot spot.
- * Windows reference a cursor through XDefineCursor or the CWCursor
- * attribute; the cursor actually shown is the one set on the deepest
- * window under the pointer, walking up to the root.  When the
- * resolved cursor has no image (core cursor-font stubs, None), the
- * classic arrow stays up.
- *
- * The image pixels are X pixel-order uint32s (A<<24|R<<16|G<<8|B),
- * which is exactly the KMS ARGB8888 cursor plane layout, so scanout
- * copies them verbatim (src/scanout.c).
+ * ARGB image + hot spot from RENDER's CreateCursor, referenced by
+ * windows (CWCursor) and resolved from the deepest window under the
+ * pointer up to the root.  Image-less cursors (core font stubs,
+ * None) fall back to the built-in arrow.  Pixels are X-order
+ * uint32s, the KMS ARGB8888 plane layout.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

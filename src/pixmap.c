@@ -163,11 +163,8 @@ int y11_pixmap_req_free(struct y11_client *c, const uint8_t *pkt,
     }
 
     y11_resource_remove(pid);
-    /*
-     * libXcursor frees the source pixmap before RenderCreateCursor, so
-     * a pixmap pictures still reference only leaves the id namespace;
-     * the memory dies with the last picture.
-     */
+    /* A pixmap pictures still reference keeps its memory alive; the
+     * id namespace entry dies now. */
     if (p->picture_refs > 0) {
         p->orphaned = true;
         return 0;

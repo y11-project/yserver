@@ -138,14 +138,8 @@ static void y11_evdev_add_device(struct y11_session *s, const char *path)
         return;
     }
 
-    /*
-     * Avoid duplicates, but evict entries whose fd a VT switch-away
-     * revoked: logind pauses devices when another VT takes over, the
-     * poll loop may never learn (no events, no readable on a revoked
-     * node), and keeping the stale fd would silently eat all input
-     * after switch-back.  Probe with a read; a live device answers
-     * EAGAIN (nothing pending) while a revoked one fails hard.
-     */
+    /* Avoid duplicates; evict revoked fds (they read as hard errors
+     * while live ones answer EAGAIN). */
     for (i = 0; i < y11_evdev_count; i++) {
         char probe;
         ssize_t n;
