@@ -428,8 +428,20 @@ int y11_render_req_put_image(struct y11_client *c, const uint8_t *pkt,
 
                 if (dx_ < 0 || dx_ >= (int32_t)d->width)
                     continue;
-                y11_render_pixel(d, gc, (size_t)dx_, (size_t)dy_,
-                                 y11_wire_get32(src + col * 4u) & 0xFFFFFFu);
+                {
+                    uint32_t pix = y11_wire_get32(src + col * 4u);
+
+                    /*
+                     * Depth-32 drawables carry a real alpha channel
+                     * (cursor images, ARGB pictures): keep it.  The
+                     * top byte of a depth-24 pixel is padding, so the
+                     * mask only belongs there.
+                     */
+                    if (d->depth < 32u)
+                        pix &= 0xFFFFFFu;
+                    y11_render_pixel(d, gc, (size_t)dx_, (size_t)dy_,
+                                     pix);
+                }
             }
         }
     } else {

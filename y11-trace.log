@@ -1,0 +1,12 @@
+y11: no controlling terminal, refusing the display (run from a TTY session)
+y11: input device /dev/input/event15 ("Dynamic Function Row Virtual Input Device"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event8 ("Apple Inc. Apple Internal Keyboard / Trackpad"): keys=1 rel=0 abs=1
+y11: input device /dev/input/event7 ("Apple Inc. Touch Bar Display Touchpad"): keys=1 rel=0 abs=1
+y11: input device /dev/input/event6 ("Apple Inc. Apple Internal Keyboard / Trackpad"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event5 ("Video Bus"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event4 ("Apple Headset"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event3 ("Power Button"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event2 ("Sleep Button"): keys=1 rel=0 abs=0
+y11: input device /dev/input/event1 ("Power Button"): keys=1 rel=0 abs=0
+y11: dri3 device /dev/dri/card1
+y11: listening on /tmp/.X11-unix/X9 (/tmp/.y11-unix/Y9 -> /tmp/.X11-unix/X9)
