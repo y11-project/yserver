@@ -1,9 +1,0 @@
-listening /dev/input/event7 (press Ctrl+C to stop)
-KEY code=330 value=1
-KEY code=325 value=1
-KEY code=330 value=0
-KEY code=325 value=0
-KEY code=330 value=1
-KEY code=325 value=1
-KEY code=330 value=0
-KEY code=325 value=0
