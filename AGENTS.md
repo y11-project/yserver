@@ -13,6 +13,19 @@ solid fills, blits and image transfer), input and grabs, MIT-SHM,
 DRI3/Present buffer passing, and a GLX visual bridge for direct
 rendering clients.
 
+## Project layout
+
+The Y11 Project spans several repositories; only this one is the
+server itself:
+
+- `yserver` (this repo, github.com/y11-project/yserver): the display
+  server `./y11`.
+- `yapps`: userland companion toolkit (`ykill`, and later `yprop`,
+  `yev`, `ysetroot`). Same C99/POSIX and BSD-2-Clause rules; its
+  Makefile auto-discovers `src/*.c` into `bin/<name>`.
+- `dwm`: the session's window manager, a converted dwm with its own
+  git history. Personal session config; private repo.
+
 ## Build
 
 - `make` builds `./y11` with `-std=c99 -pedantic -Wall -Wextra -Werror`.
@@ -61,6 +74,10 @@ rendering clients.
   Y", "we fixed this after..." — that history belongs in the commit
   message, not the tree. State the standing requirement instead:
   `/* deviceID must be nonzero: 0 reads as invalid */`.
+- No personal-configuration references. Write "a custom cursor theme",
+  not a theme's name; "high-resolution trackpads", not specific
+  hardware. If a fix was for one person's setup, describe the general
+  class of problem it solved.
 - File headers are 1-3 lines: what the file is, nothing else. No client
   lists, no bug sagas, no project manifestos.
 - Wire-format facts (offsets, sizes, parser requirements, hardware

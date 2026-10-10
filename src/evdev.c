@@ -606,7 +606,8 @@ void y11_evdev_handle(struct y11_session *s, int fd)
                                 dev->touch_prev_x = dev->abs_x;
                                 dev->touch_prev_y = dev->abs_y;
 
-                                /* Scale down high-resolution trackpads (e.g. MacBook T2 ~95 units/mm) */
+                                /* Scale down high-resolution trackpad
+                                 * motion (fine units/mm reports). */
                                 if (dev->abs_max_x - dev->abs_min_x > 4000) {
                                     dx = dx / 8;
                                     dy = dy / 8;

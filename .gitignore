@@ -2,3 +2,4 @@
 *.o
 y11
 dwm/dwm
+test.sh
