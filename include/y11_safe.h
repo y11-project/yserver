@@ -82,4 +82,13 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
                                               uint32_t num_items,
                                               size_t actual_bytes);
 
+/*
+ * Validate a value-list payload against its bitmask: the list carries
+ * exactly one 4-byte value per set bit, so payload_len must equal
+ * popcount(value_mask) * 4.  Bits outside a request's valid mask are
+ * the caller's policy; this check is pure arithmetic.
+ */
+y11_safe_status y11_validate_value_mask(uint32_t value_mask,
+                                        size_t payload_len);
+
 #endif /* Y11_SAFE_H */
