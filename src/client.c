@@ -18,6 +18,12 @@
 #include "y11.h"
 #include "y11_wire.h"
 
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
+
+#include "y11_safe.h"
+#endif
+
 /* ---- allocation ---------------------------------------------------------- */
 
 struct y11_client *y11_client_create(int fd, int slot)
@@ -553,6 +559,31 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
     if (c->in_len - *off - sizeof(*req) < skip)
         return 0;               /* wait for the authorization data */
 
+#ifdef Y11_DUAL_VERIFY
+    /*
+     * Shadow probe: the C path only admits little-endian protocol 11,
+     * so the Rust parser must agree on every header field it read,
+     * including the padded authorization byte count.
+     */
+    {
+        struct y11_handshake_req dv_hs;
+        y11_safe_status dv_st = y11_handshake_parse_header(
+            (const uint8_t *)req, c->in_len - *off, &dv_hs);
+
+        assert(dv_st == Y11_SAFE_OK);
+        assert(dv_hs.byte_order == req->byte_order);
+        assert(dv_hs.major_version ==
+               y11_wire_get16(&req->major_version));
+        assert(dv_hs.minor_version ==
+               y11_wire_get16(&req->minor_version));
+        assert(dv_hs.auth_proto_len ==
+               y11_wire_get16(&req->auth_proto_len));
+        assert(dv_hs.auth_data_len ==
+               y11_wire_get16(&req->auth_data_len));
+        assert(dv_hs.skip_bytes == skip);
+    }
+#endif
+
     *off += sizeof(*req) + skip;
 
     if (y11_client_send_setup_success(c) != 0)
@@ -578,21 +609,51 @@ static int y11_client_requests(struct y11_client *c, size_t *off)
         size_t pkt_len;
         int rc;
 
+#ifdef Y11_DUAL_VERIFY
+        /*
+         * Shadow probe: the Rust framer decides independently on the
+         * same buffered bytes, and each C decision point below asserts
+         * its outcome.  Divergence aborts the server, so live traffic
+         * proves the two framers equivalent.  The one tolerated
+         * disagreement: length16 == 0 without the extension is a
+         * framing violation per the validator, while the C side
+         * leniently reads it as a bare 4-byte request.
+         */
+        struct y11_request_frame dv_frame;
+        y11_safe_status dv_st = y11_frame_request(
+            pkt, c->in_len - *off,
+            (uint8_t)(c->big_requests ? 1 : 0), &dv_frame);
+#endif
+
         if (wire_len == 0) {
             if (!c->big_requests) {
                 /* BIG-REQUESTS not enabled: the X server reads this as a
                  * 4-byte request (its opcode-specific fields decide). */
                 pkt_len = sizeof(y11_req);
+#ifdef Y11_DUAL_VERIFY
+                assert(dv_st == Y11_SAFE_INVALID_HEADER);
+#endif
             } else {
                 /* Extended 8-byte header carries the true length. */
                 uint32_t true_len;
 
-                if (c->in_len - *off < sizeof(y11_big_req))
+                if (c->in_len - *off < sizeof(y11_big_req)) {
+#ifdef Y11_DUAL_VERIFY
+                    assert(dv_st == Y11_SAFE_INSUFFICIENT_DATA);
+#endif
                     break;      /* wait for the extended header */
+                }
                 true_len = y11_wire_get32(pkt + 4);
                 if (true_len < 2 || (size_t)true_len * 4u > Y11_INBUF_MAX) {
                     /* Cannot hold the extended header, or the request is
-                     * larger than this server will ever buffer: fatal. */
+                     * larger than this server will ever buffer: fatal.
+                     * Oversize policy is C-side; the pure framer only
+                     * flags unrepresentable lengths. */
+#ifdef Y11_DUAL_VERIFY
+                    assert(dv_st == Y11_SAFE_LENGTH_OVERFLOW ||
+                           (dv_st == Y11_SAFE_OK &&
+                            (size_t)dv_frame.true_len * 4u > Y11_INBUF_MAX));
+#endif
                     c->wants_close = 1;
                     return -1;
                 }
@@ -601,14 +662,31 @@ static int y11_client_requests(struct y11_client *c, size_t *off)
         } else {
             pkt_len = (size_t)wire_len * 4u;
             if (pkt_len > Y11_INBUF_MAX) {
+#ifdef Y11_DUAL_VERIFY
+                assert(dv_st == Y11_SAFE_LENGTH_OVERFLOW ||
+                       (dv_st == Y11_SAFE_OK && pkt_len > Y11_INBUF_MAX));
+#endif
                 c->wants_close = 1;
                 return -1;
             }
         }
 
-        if (c->in_len - *off < pkt_len)
+        if (c->in_len - *off < pkt_len) {
+#ifdef Y11_DUAL_VERIFY
+            assert(dv_st == Y11_SAFE_INSUFFICIENT_DATA);
+#endif
             break;              /* wait for the rest of the packet */
+        }
 
+#ifdef Y11_DUAL_VERIFY
+        if (wire_len != 0 || c->big_requests) {
+            assert(dv_st == Y11_SAFE_OK);
+            assert(dv_frame.true_len == (uint32_t)pkt_len);
+            assert(dv_frame.opcode == pkt[0]);
+            assert(dv_frame.is_bigreq ==
+                    (uint8_t)(wire_len == 0 && c->big_requests ? 1 : 0));
+        }
+#endif
         rc = y11_dispatch_req(c, pkt, pkt_len);
         *off += pkt_len;
         if (rc < 0) {

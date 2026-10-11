@@ -46,6 +46,9 @@ engine.add_cflag("y11", "-Wextra")
 engine.add_cflag("y11", "-Werror")
 engine.add_cflag("y11", "-O2")
 engine.add_cflag("y11", "-D_POSIX_C_SOURCE=200809L")
+# The thorn pipeline is the dual-verify shadow build: client.c runs
+# the Rust framers alongside its own checks and asserts agreement.
+engine.add_cflag("y11", "-DY11_DUAL_VERIFY=1")
 engine.add_include("y11", "include")
 engine.add_include("y11", "/usr/include/libdrm")
 
