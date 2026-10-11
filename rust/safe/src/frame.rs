@@ -1,4 +1,4 @@
-//! Request framing with BIG-REQUESTS (Phase 1).
+//! Request framing with BIG-REQUESTS and the opcode length gate.
 //!
 //! SPDX-License-Identifier: BSD-2-Clause
 
@@ -6,6 +6,7 @@ use crate::error::{
     get16, get32, Y11_SAFE_INSUFFICIENT_DATA, Y11_SAFE_INVALID_HEADER,
     Y11_SAFE_LENGTH_OVERFLOW, Y11_SAFE_OK, Y11SafeStatus,
 };
+use crate::opcode::OPCODE_MIN_LEN;
 
 /// struct y11_request_frame (include/y11_safe.h).
 #[repr(C)]
@@ -74,6 +75,12 @@ pub extern "C" fn y11_frame_request(
 
     if len < true_len as usize {
         return Y11_SAFE_INSUFFICIENT_DATA;
+    }
+    /* Opcode gate runs only on fully buffered packets: a truncated
+     * prefix is INSUFFICIENT_DATA either way, and the C dispatch loop
+     * waits on the same condition. */
+    if true_len < OPCODE_MIN_LEN[opcode as usize] as u32 {
+        return Y11_SAFE_INVALID_HEADER;
     }
 
     unsafe {

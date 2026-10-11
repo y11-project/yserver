@@ -652,12 +652,16 @@ static int y11_client_requests(struct y11_client *c, size_t *off)
         }
 
 #ifdef Y11_DUAL_VERIFY
-        if (wire_len != 0 || c->big_requests) {
-            assert(dv_st == Y11_SAFE_OK);
+        if (dv_st == Y11_SAFE_OK) {
             assert(dv_frame.true_len == (uint32_t)pkt_len);
             assert(dv_frame.opcode == pkt[0]);
             assert(dv_frame.is_bigreq ==
                     (uint8_t)(wire_len == 0 && c->big_requests ? 1 : 0));
+        } else {
+            /* INVALID_HEADER here is either the length16 == 0 lenient
+             * escape or the Rust opcode-min gate; the handler's own
+             * fixed-part check rejects the packet either way. */
+            assert(dv_st == Y11_SAFE_INVALID_HEADER);
         }
 #endif
         rc = y11_dispatch_req(c, pkt, pkt_len);

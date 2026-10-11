@@ -15,6 +15,7 @@ mod error_frame;
 mod frame;
 mod handshake;
 mod mask;
+mod opcode;
 mod property;
 
 pub use error::Y11SafeStatus;
@@ -22,6 +23,7 @@ pub use error_frame::y11_format_error;
 pub use frame::{y11_frame_request, Y11RequestFrame};
 pub use handshake::{y11_handshake_parse_header, Y11HandshakeReq};
 pub use mask::y11_validate_value_mask;
+pub use opcode::y11_opcode_min_len;
 pub use property::y11_validate_property_payload;
 
 use core::panic::PanicInfo;
