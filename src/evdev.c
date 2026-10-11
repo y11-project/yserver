@@ -27,7 +27,7 @@
 #endif
 
 #include "y11.h"
-#include "y11_drm.h"
+#include "kms.h"
 
 #ifndef INPUT_PROP_DIRECT
 #define INPUT_PROP_DIRECT 0x01

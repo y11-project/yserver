@@ -16,12 +16,12 @@
 #include <unistd.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 #ifdef Y11_DUAL_VERIFY
 #include <assert.h>
 
-#include "y11_safe.h"
+#include "safe.h"
 #endif
 
 /* ---- allocation ---------------------------------------------------------- */

@@ -26,104 +26,111 @@ Linux_SEATLIB  = -l:libseat.so.1
 FreeBSD_SEATLIB = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
-HDRS = include/y11.h include/y11_wire.h include/y11_drm.h include/libseat.h
-OBJS = src/main.o src/client.o src/dispatch.o src/atom.o src/resource.o src/events.o src/window.o src/pixmap.o src/gc.o src/render.o src/damage.o src/input.o src/grab.o src/session.o src/drm.o src/scanout.o src/shm.o src/dri3.o src/present.o src/property.o src/glx.o src/selection.o src/xrender.o src/evdev.o src/xkb.o src/cursor.o src/saver.o
+HDRS = include/y11.h include/wire.h include/kms.h include/libseat.h
+OBJDIR  = out/artifacts
+OBJS = $(OBJDIR)/main.o $(OBJDIR)/client.o $(OBJDIR)/dispatch.o $(OBJDIR)/atom.o $(OBJDIR)/resource.o $(OBJDIR)/events.o $(OBJDIR)/window.o $(OBJDIR)/pixmap.o $(OBJDIR)/gc.o $(OBJDIR)/render.o $(OBJDIR)/damage.o $(OBJDIR)/input.o $(OBJDIR)/grab.o $(OBJDIR)/session.o $(OBJDIR)/drm.o $(OBJDIR)/scanout.o $(OBJDIR)/shm.o $(OBJDIR)/dri3.o $(OBJDIR)/present.o $(OBJDIR)/property.o $(OBJDIR)/glx.o $(OBJDIR)/selection.o $(OBJDIR)/xrender.o $(OBJDIR)/evdev.o $(OBJDIR)/xkb.o $(OBJDIR)/cursor.o $(OBJDIR)/saver.o
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
 DESTDIR =
 
-all: y11
+all: out/y11
 
-y11: $(OBJS)
+$(OBJS): $(OBJDIR)/.dir
+
+out/y11: $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(DRM_LIBS) $(SEATLIB)
 
-src/main.o: src/main.c $(HDRS)
+$(OBJDIR)/.dir:
+	@mkdir -p $(OBJDIR)
+	@touch $@
+
+$(OBJDIR)/main.o: src/main.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/main.c -o $@
 
-src/client.o: src/client.c $(HDRS)
+$(OBJDIR)/client.o: src/client.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/client.c -o $@
 
-src/dispatch.o: src/dispatch.c $(HDRS)
+$(OBJDIR)/dispatch.o: src/dispatch.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/dispatch.c -o $@
 
-src/atom.o: src/atom.c $(HDRS)
+$(OBJDIR)/atom.o: src/atom.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/atom.c -o $@
 
-src/resource.o: src/resource.c $(HDRS)
+$(OBJDIR)/resource.o: src/resource.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/resource.c -o $@
 
-src/events.o: src/events.c $(HDRS)
+$(OBJDIR)/events.o: src/events.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/events.c -o $@
 
-src/window.o: src/window.c $(HDRS)
+$(OBJDIR)/window.o: src/window.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/window.c -o $@
 
-src/pixmap.o: src/pixmap.c $(HDRS)
+$(OBJDIR)/pixmap.o: src/pixmap.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/pixmap.c -o $@
 
-src/gc.o: src/gc.c $(HDRS)
+$(OBJDIR)/gc.o: src/gc.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/gc.c -o $@
 
-src/render.o: src/render.c $(HDRS)
+$(OBJDIR)/render.o: src/render.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/render.c -o $@
 
-src/damage.o: src/damage.c $(HDRS)
+$(OBJDIR)/damage.o: src/damage.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/damage.c -o $@
 
-src/input.o: src/input.c $(HDRS)
+$(OBJDIR)/input.o: src/input.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/input.c -o $@
 
-src/grab.o: src/grab.c $(HDRS)
+$(OBJDIR)/grab.o: src/grab.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/grab.c -o $@
 
-src/session.o: src/session.c $(HDRS)
+$(OBJDIR)/session.o: src/session.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/session.c -o $@
 
-src/drm.o: src/drm.c $(HDRS)
+$(OBJDIR)/drm.o: src/drm.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/drm.c -o $@
 
-src/scanout.o: src/scanout.c $(HDRS)
+$(OBJDIR)/scanout.o: src/scanout.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/scanout.c -o $@
 
-src/shm.o: src/shm.c $(HDRS)
+$(OBJDIR)/shm.o: src/shm.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/shm.c -o $@
 
-src/dri3.o: src/dri3.c $(HDRS)
+$(OBJDIR)/dri3.o: src/dri3.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/dri3.c -o $@
 
-src/present.o: src/present.c $(HDRS)
+$(OBJDIR)/present.o: src/present.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/present.c -o $@
 
-src/property.o: src/property.c $(HDRS)
+$(OBJDIR)/property.o: src/property.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/property.c -o $@
 
-src/glx.o: src/glx.c $(HDRS)
+$(OBJDIR)/glx.o: src/glx.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/glx.c -o $@
 
-src/selection.o: src/selection.c $(HDRS)
+$(OBJDIR)/selection.o: src/selection.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/selection.c -o $@
 
-src/xrender.o: src/xrender.c $(HDRS)
+$(OBJDIR)/xrender.o: src/xrender.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/xrender.c -o $@
 
-src/evdev.o: src/evdev.c $(HDRS)
+$(OBJDIR)/evdev.o: src/evdev.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/evdev.c -o $@
 
-src/xkb.o: src/xkb.c $(HDRS)
+$(OBJDIR)/xkb.o: src/xkb.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/xkb.c -o $@
 
 clean:
-	rm -f $(OBJS) y11
+	rm -rf out
 
 install: all
 	mkdir -p $(DESTDIR)$(BINDIR)
-	install -m 0755 y11 $(DESTDIR)$(BINDIR)/y11
+	install -m 0755 out/y11 $(DESTDIR)$(BINDIR)/y11
 
 .PHONY: all clean install
 
-src/cursor.o: src/cursor.c $(HDRS)
+$(OBJDIR)/cursor.o: src/cursor.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/cursor.c -o $@
 
-src/saver.o: src/saver.c $(HDRS)
+$(OBJDIR)/saver.o: src/saver.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/saver.c -o $@

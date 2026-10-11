@@ -1,8 +1,6 @@
-*.log
-*.o
-y11
-dwm/dwm
-test.sh
 out/
+logs/
+*.log
+test.sh
 .ninja_deps
 .ninja_log

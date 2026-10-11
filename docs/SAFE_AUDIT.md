@@ -2,7 +2,7 @@
 
 Audit of every site that touches raw client byte streams, and the plan for
 moving the pure parsing layer to a `#![no_std]` Rust static library
-(`liby11_safe.a`) while keeping socket I/O, DRM/KMS and rendering in C99.
+(`libsafe.a`) while keeping socket I/O, DRM/KMS and rendering in C99.
 
 Scope: `src/*.c`, `include/y11.h`, `include/y11_wire.h`.
 All line references are as of the audit commit; hazards marked **fixed**
@@ -92,7 +92,7 @@ That probe is the seed of the Phase 0 harness in §4.
 
 ## 2. Separation of Concerns Matrix
 
-### 2.1 Migrate to Rust — `liby11_safe.a` (`#![no_std]`, zero heap)
+### 2.1 Migrate to Rust — `libsafe.a` (`#![no_std]`, zero heap)
 
 Pure functions over borrowed bytes. No allocator, no statics, no I/O;
 every output is by caller-provided POD out-parameter.
@@ -119,9 +119,9 @@ every output is by caller-provided POD out-parameter.
 | All rendering (core + RENDER composite, glyph stores, cursor planes) | performance; byte-validation is upstream of these paths, not inside them |
 | GLX bridge | dormant (unadvertised); keep the guards, delete or freeze the rest |
 
-## 3. Proposed C-ABI Surface — `include/y11_safe.h`
+## 3. Proposed C-ABI Surface — `include/safe.h`
 
-The contract header landed with Phase 0; `rust/y11_safe` implements it
+The contract header landed with Phase 0; `rust/safe` implements it
 as a `#![no_std]` crate audited by thorn-rs against these
 declarations. Rules: fixed-width fields only, no pointers inside
 structs, slices cross as `(const uint8_t *buf, size_t len)` borrows,
@@ -129,8 +129,8 @@ every call returns `y11_safe_status`. Rust side: `#[no_mangle] pub
 extern "C"`, `#[repr(C)]` structs.
 
 ```c
-#ifndef Y11_SAFE_H
-#define Y11_SAFE_H
+#ifndef SAFE_H
+#define SAFE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -172,7 +172,7 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
                                               uint32_t num_items,
                                               size_t actual_bytes);
 
-#endif /* Y11_SAFE_H */
+#endif /* SAFE_H */
 ```
 
 Landed with Phase 2: `y11_validate_value_mask(value_mask, payload_len)`
@@ -197,7 +197,7 @@ uint32_t y11_safe_reply_length_words(size_t payload_bytes,
 
 Linkage notes for the thorn ecosystem:
 
-- `liby11_safe.a` is a **plain C-ABI static library**, not a pith
+- `libsafe.a` is a **plain C-ABI static library**, not a pith
   plugin: no `PITH_FFI_LONG` crossing, no `c_<author>_<module>_<fn>`
   mangling. Symbols keep their `y11_*` names exactly as declared here.
 - Built as a single `#![no_std]` crate via `rust.crate()` in
@@ -216,11 +216,11 @@ behavior.
 
 ### Phase 0 — scaffolding and gates (no behavior change)
 
-Landed: `include/y11_safe.h` contract, the `rust/y11_safe` `#![no_std]`
+Landed: `include/safe.h` contract, the `rust/safe` `#![no_std]`
 crate with stub bodies, build.thorn wiring through thorn-rs
 (`rust.crate` + the `test_safe_stub` target), and the C smoke harness
 (`tests/test_safe_stub.c`). Verified: `thorn build --engine ninja` →
-`ninja` builds `liby11_safe.a`, the audit stamps
+`ninja` builds `libsafe.a`, the audit stamps
 `.thorn-rs/y11_safe.verified` with zero missing symbols, the server
 links with the archive and serves, and the stub test exits 0.
 
@@ -232,7 +232,7 @@ Still owed by later phases:
    the existing raw-socket probes, (c) random truncations/bit flips.
    Gate: no crash, and byte-identical error frames per corpus entry.
 2. Header changes after this point require a version bump of
-   `include/y11_safe.h` (frozen by the audit).
+   `include/safe.h` (frozen by the audit).
 3. Track in CI: `make` (warnings must stay at zero) + wirefuzz green,
    alongside the existing dwm session smoke.
 
@@ -242,7 +242,7 @@ Still owed by later phases:
    pure functions; `#![no_std]`, `#![feature(...)]`-free, no `unsafe`
    needed (all slice access via `get()` on the borrowed `&[u8]`).
 2. `build.thorn` for yserver: `rust.crate("y11-safe", path: "safe/")`
-   + `engine.add_target` for `liby11_safe.a` +
+   + `engine.add_target` for `libsafe.a` +
    `engine.add_source` into the server link, keeping the unity build:
    the archive is a link object, not a translation unit — no
    rename-define interplay with `RENAME_DEFS`.

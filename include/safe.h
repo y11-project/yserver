@@ -1,5 +1,5 @@
 /*
- * y11_safe.h - C-ABI contract for liby11_safe.a, the no_std Rust wire
+ * safe.h - C-ABI contract for liby11_safe.a, the no_std Rust wire
  * validators (docs/Y11_SAFE_AUDIT.md).  Structs are POD with fixed-width
  * fields; buffers cross as (buf, len) borrows; every call returns
  * y11_safe_status.  The thorn-rs audit compares this header's function

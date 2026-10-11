@@ -29,8 +29,8 @@
 #include <xf86drmMode.h>
 
 #include "y11.h"
-#include "y11_drm.h"
-#include "y11_wire.h"
+#include "kms.h"
+#include "wire.h"
 
 /* Sub-opcodes (presentproto.h). */
 enum {

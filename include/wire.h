@@ -1,5 +1,5 @@
 /*
- * y11_wire.h - Binary wire structures for the X11 wire protocol.
+ * wire.h - Binary wire structures for the X11 wire protocol.
  *
  * Every structure below is laid out exactly as specified by the X11 wire
  * protocol.  All members are naturally aligned, so the structures need no

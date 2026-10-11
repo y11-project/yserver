@@ -14,7 +14,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* ---- predefined atoms 1-68 (Xatom.h order) -------------------------------- */
 

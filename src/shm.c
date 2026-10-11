@@ -27,7 +27,7 @@
 #include <unistd.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* Sub-opcodes (shmproto.h). */
 enum {

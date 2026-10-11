@@ -20,7 +20,7 @@
 #include <string.h>
 #include <sys/mman.h>
 
-#include "y11_drm.h"
+#include "kms.h"
 
 static y11_drawable_t *y11_scanout_root;
 struct y11_scanout_damage {

@@ -29,7 +29,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 static struct y11_window *y11_root;     /* the screen's root window */
 

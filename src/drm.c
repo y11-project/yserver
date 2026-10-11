@@ -26,7 +26,7 @@
 #include <sys/vt.h>
 #include <drm/drm.h>
 
-#include "y11_drm.h"
+#include "kms.h"
 
 static struct y11_output *y11_output_list;
 

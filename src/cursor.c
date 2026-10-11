@@ -15,7 +15,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 struct y11_cursor_img {
     struct y11_cursor_img *next;

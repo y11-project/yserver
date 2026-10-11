@@ -14,7 +14,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* Free a pixmap object and its pixel buffer (table entry stays).
  * Shared-memory pixmaps point into the client's segment and DRI3

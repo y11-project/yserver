@@ -12,7 +12,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 #define Y11_RESOURCE_BUCKETS 512u
 

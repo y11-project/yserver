@@ -21,7 +21,7 @@
 
 #include <stdio.h>
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* RENDER sub-opcodes (render.h). */
 enum {

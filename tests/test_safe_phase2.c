@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "y11_safe.h"
+#include "safe.h"
 
 static int checks;
 

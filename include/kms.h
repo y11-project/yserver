@@ -1,5 +1,5 @@
 /*
- * y11_drm.h - DRM/KMS modesetting, session control and hardware
+ * kms.h - DRM/KMS modesetting, session control and hardware
  * scanout for the Y11 display server.
  *
  * The session module (src/session.c) authenticates with seatd or

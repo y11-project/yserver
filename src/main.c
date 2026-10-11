@@ -26,8 +26,8 @@
 #include <unistd.h>
 
 #include "y11.h"
-#include "y11_wire.h"
-#include "y11_drm.h"
+#include "wire.h"
+#include "kms.h"
 
 int y11_debug;                  /* set from $Y11_DEBUG in main() */
 

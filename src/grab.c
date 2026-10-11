@@ -16,7 +16,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* Grab reply status codes (X11 wire standard). */
 enum {

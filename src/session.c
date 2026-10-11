@@ -33,7 +33,7 @@
 #include <drm/drm.h>
 #include <drm_mode.h>
 
-#include "y11_drm.h"
+#include "kms.h"
 
 /*
  * VT switch flags, set from the signal handlers and consumed in the

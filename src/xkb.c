@@ -23,7 +23,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* XKB request opcodes carried in body byte 1 (xcb_xkb.h). */
 #define Y11_XKB_REQ_USE_EXTENSION     0u

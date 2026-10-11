@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /*
  * Deliver Expose for the region (in `win`'s drawable coordinates,

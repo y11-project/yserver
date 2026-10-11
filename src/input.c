@@ -24,7 +24,7 @@
 #include <time.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 static y11_pointer_t y11_pointer_state;
 static y11_keyboard_t y11_keyboard_state;

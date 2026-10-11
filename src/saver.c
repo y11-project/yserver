@@ -16,7 +16,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 #define Y11_SAVER_REQ_QUERY_VERSION  0u
 #define Y11_SAVER_REQ_QUERY_INFO     1u

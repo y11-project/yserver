@@ -1,14 +1,14 @@
-//! y11_safe - wire-protocol validators for the y11 display server.
+//! safe - wire-protocol validators for the y11 display server.
 //!
-//! #![no_std] static library linked into the C server as liby11_safe.a.
-//! The C-ABI contract is include/y11_safe.h; thorn-rs audits the
+//! #![no_std] static library linked into the C server as libsafe.a.
+//! The C-ABI contract is include/safe.h; thorn-rs audits the
 //! exported symbols against that header.  Phase 0 carries stub
 //! implementations; the full parsers land per docs/Y11_SAFE_AUDIT.md.
 //!
 //! SPDX-License-Identifier: BSD-2-Clause
 
 #![no_std]
-#![crate_name = "y11_safe"]
+#![crate_name = "safe"]
 
 mod error;
 mod error_frame;

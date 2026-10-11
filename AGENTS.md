@@ -49,7 +49,7 @@ server itself:
 
 - ISO C99 only, no GNU extensions. POSIX via `-D_POSIX_C_SOURCE=200809L`.
 - Internal identifiers use the `y11_` and `yid_` prefixes.
-- Wire structs live in `include/y11_wire.h`, are naturally aligned (no
+- Wire structs live in `include/wire.h`, are naturally aligned (no
   packing attributes) and match the X11 protocol byte-for-byte. Every
   struct gets a compile-time size check (`y11_wire_chk_*`).
 - Multi-byte wire fields are only accessed through the little-endian

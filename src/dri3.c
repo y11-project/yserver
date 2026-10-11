@@ -37,7 +37,7 @@ extern long syscall(long number, ...);
 #include <xf86drmMode.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* Sub-opcodes (dri3proto.h). */
 enum {

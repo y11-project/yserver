@@ -24,7 +24,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* GLX sub-opcodes (glxproto.h). */
 enum {

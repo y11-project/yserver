@@ -17,7 +17,7 @@
 #include <string.h>
 
 #include "y11.h"
-#include "y11_wire.h"
+#include "wire.h"
 
 /* Accepted GC value-mask bits (GCFunction .. GCArcMode). */
 #define Y11_GC_MASK_ALL 0x007FFFFFu
