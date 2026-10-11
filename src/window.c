@@ -10,6 +10,9 @@
 
 #include "y11.h"
 #include "wire.h"
+#ifdef Y11_DUAL_VERIFY
+#include "safe.h"
+#endif
 
 static struct y11_window *y11_root;     /* the screen's root window */
 
@@ -726,6 +729,10 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
     nvalues = y11_popcount32(value_mask);
+#ifdef Y11_DUAL_VERIFY
+    if (y11_validate_value_mask(value_mask, avail - 28u) != Y11_SAFE_OK)
+        return y11_window_bad_length(c, pkt[0]);
+#endif
     if (avail - 28u < (size_t)nvalues * 4u)
         return y11_window_bad_length(c, pkt[0]);
 
@@ -924,6 +931,10 @@ int y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
     nvalues = y11_popcount32(value_mask);
+#ifdef Y11_DUAL_VERIFY
+    if (y11_validate_value_mask(value_mask, avail - 8u) != Y11_SAFE_OK)
+        return y11_window_bad_length(c, pkt[0]);
+#endif
     if (avail - 8u < (size_t)nvalues * 4u)
         return y11_window_bad_length(c, pkt[0]);
 
@@ -1382,6 +1393,10 @@ int y11_window_req_configure(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
     nvalues = y11_popcount32(value_mask);
+#ifdef Y11_DUAL_VERIFY
+    if (y11_validate_value_mask(value_mask, avail - 8u) != Y11_SAFE_OK)
+        return y11_window_bad_length(c, pkt[0]);
+#endif
     if (avail - 8u < (size_t)nvalues * 4u)
         return y11_window_bad_length(c, pkt[0]);
 
