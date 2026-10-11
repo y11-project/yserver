@@ -30,3 +30,14 @@ fn panic(_: &PanicInfo<'_>) -> ! {
         core::hint::spin_loop();
     }
 }
+
+/*
+ * Sysroot core objects carry DW.ref.rust_eh_personality metadata even
+ * when the crate links with -C panic=abort (stable toolchains compile
+ * core once, unwind-capable); anything pulling those objects into a
+ * C link then misses the symbol.  With abort semantics the
+ * personality is never called, so a stub definition satisfies the
+ * linker without enabling unwinding.
+ */
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
