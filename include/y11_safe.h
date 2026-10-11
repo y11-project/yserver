@@ -91,4 +91,22 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
 y11_safe_status y11_validate_value_mask(uint32_t value_mask,
                                         size_t payload_len);
 
+/*
+ * Format a canonical 32-byte X11 wire error frame into out_buf
+ * (out_len must be at least 32): byte 0 reads 0, byte 1 carries
+ * error_code, the CARD16 sequence number and CARD32 bad value are
+ * encoded in byte_order ('B' big-endian, 'l' little-endian), the
+ * CARD16 minor opcode precedes the major opcode at bytes 8..10, and
+ * the tail stays zero.  The sequence counter truncates to its low
+ * 16 bits, as the wire field is a CARD16.
+ */
+y11_safe_status y11_format_error(uint8_t error_code,
+                                 uint8_t major_opcode,
+                                 uint16_t minor_opcode,
+                                 uint32_t sequence_number,
+                                 uint32_t bad_value,
+                                 uint8_t byte_order,
+                                 uint8_t *out_buf,
+                                 size_t out_len);
+
 #endif /* Y11_SAFE_H */

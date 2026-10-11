@@ -11,12 +11,14 @@
 #![crate_name = "y11_safe"]
 
 mod error;
+mod error_frame;
 mod frame;
 mod handshake;
 mod mask;
 mod property;
 
 pub use error::Y11SafeStatus;
+pub use error_frame::y11_format_error;
 pub use frame::{y11_frame_request, Y11RequestFrame};
 pub use handshake::{y11_handshake_parse_header, Y11HandshakeReq};
 pub use mask::y11_validate_value_mask;

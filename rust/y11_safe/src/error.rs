@@ -35,3 +35,17 @@ pub(crate) fn get32(buf: &[u8], off: usize) -> u32 {
 pub(crate) fn pad_delta(x: u32) -> u32 {
     (4 - (x % 4)) % 4
 }
+
+/// Encode a CARD16 at a byte offset in the named byte order
+/// (true = MSB-first).
+pub(crate) fn put16(buf: &mut [u8], off: usize, v: u16, be: bool) {
+    let b = if be { v.to_be_bytes() } else { v.to_le_bytes() };
+    buf[off] = b[0];
+    buf[off + 1] = b[1];
+}
+
+/// Encode a CARD32 at a byte offset in the named byte order.
+pub(crate) fn put32(buf: &mut [u8], off: usize, v: u32, be: bool) {
+    let b = if be { v.to_be_bytes() } else { v.to_le_bytes() };
+    buf[off..off + 4].copy_from_slice(&b);
+}
