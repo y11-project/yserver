@@ -121,9 +121,12 @@ every output is by caller-provided POD out-parameter.
 
 ## 3. Proposed C-ABI Surface — `include/y11_safe.h`
 
-Rules: fixed-width fields only, no pointers inside structs, slices cross
-as `(const uint8_t *buf, size_t len)` borrows, every call returns
-`y11_safe_status`. Rust side: `#[no_mangle] extern "C"`, `#[repr(C)]`.
+The contract header landed with Phase 0; `rust/y11_safe` implements it
+as a `#![no_std]` crate audited by thorn-rs against these
+declarations. Rules: fixed-width fields only, no pointers inside
+structs, slices cross as `(const uint8_t *buf, size_t len)` borrows,
+every call returns `y11_safe_status`. Rust side: `#[no_mangle] pub
+extern "C"`, `#[repr(C)]` structs.
 
 ```c
 #ifndef Y11_SAFE_H
@@ -132,124 +135,77 @@ as `(const uint8_t *buf, size_t len)` borrows, every call returns
 #include <stddef.h>
 #include <stdint.h>
 
-/* Status codes; ordered so 0 is the only success. */
+/* Status codes; 0 is the only success. */
 typedef enum {
-    Y11_SAFE_OK         = 0,   /* parsed; out-params valid */
-    Y11_SAFE_NEED_MORE  = 1,   /* well-formed prefix; wait for more bytes */
-    Y11_SAFE_BAD_LENGTH = 2,   /* framing/size violation -> BadLength */
-    Y11_SAFE_BAD_VALUE  = 3,   /* mask/format/domain violation -> BadValue */
-    Y11_SAFE_BAD_REQUEST= 4,   /* unknown/unsupported -> BadRequest */
-    Y11_SAFE_TOO_LARGE  = 5    /* exceeds server maximum -> disconnect */
+    Y11_SAFE_OK = 0,
+    Y11_SAFE_INSUFFICIENT_DATA,   /* well-formed prefix; buffer more */
+    Y11_SAFE_INVALID_HEADER,      /* framing/opcode violation */
+    Y11_SAFE_LENGTH_OVERFLOW,     /* declared size unrepresentable */
+    Y11_SAFE_UNSUPPORTED_VER,      /* protocol major is not 11 */
+    Y11_SAFE_INVALID_ENDIAN,      /* byte order is not little-endian */
+    Y11_SAFE_PAYLOAD_MISMATCH     /* value/format/units vs bytes */
 } y11_safe_status;
 
-/* ---- setup handshake ------------------------------------------------ */
-
-typedef struct {
-    uint8_t  byte_order;     /* 'l' or 'B' as received */
+struct y11_handshake_req {   /* the 12-byte SetupRequest fixed part */
+    uint8_t  byte_order;
     uint16_t major_version;
     uint16_t minor_version;
     uint16_t auth_proto_len;
     uint16_t auth_data_len;
-    uint32_t skip_bytes;     /* padded auth bytes the C side must drop */
-} y11_safe_handshake;
+    uint32_t skip_bytes;     /* pad4(proto) + pad4(data) to buffer */
+};
 
-y11_safe_status y11_handshake_parse_header(const uint8_t *buf,
-                                           size_t len,
-                                           y11_safe_handshake *out);
-
-/* ---- request framing ------------------------------------------------- */
-
-typedef struct {
+struct y11_request_frame {   /* one framed request */
     uint8_t  opcode;
-    uint16_t wire_len;        /* raw CARD16 (0 for BIG-REQUESTS) */
-    uint8_t  is_bigreq;       /* 1 when the 8-byte extended header applies */
-    uint32_t true_len;        /* validated total request length in bytes */
-} y11_safe_frame;
+    uint16_t wire_len;       /* 0 selects the BIG-REQUESTS form */
+    uint8_t  is_bigreq;
+    uint32_t true_len;       /* total bytes incl. the header */
+};
 
-y11_safe_status y11_frame_request(const uint8_t *buf,
-                                  size_t len,
-                                  uint8_t bigreq_enabled,
-                                  uint32_t max_request_bytes,
-                                  y11_safe_frame *out);
-
-/* ---- value-list payloads --------------------------------------------- */
-
-/*
- * Validates a value-mask request body: fixed_part bytes of fixed fields,
- * then popcount(mask) 4-byte values. mask_valid is the all-valid mask
- * (CWA/GCW/CWX); a set bit outside it yields BAD_VALUE. Returns OK
- * only when avail == fixed_part + popcount(mask) * 4 (exact, so no
- * trailing junk is accepted).
- */
-y11_safe_status y11_validate_value_mask(const uint8_t *body,
-                                        size_t avail,
-                                        size_t fixed_part,
-                                        uint32_t mask,
-                                        uint32_t mask_valid,
-                                        uint32_t *n_values);
-
-/* ---- list payloads ---------------------------------------------------- */
-
-/*
- * Validates a request body made of a fixed part plus n_per_unit-byte
- * elements. element_size must be 4 or 8; avail must divide exactly.
- * On OK, *n_elements = (avail - fixed_part) / element_size.
- */
-y11_safe_status y11_safe_validate_list(const uint8_t *body,
-                                       size_t avail,
-                                       size_t fixed_part,
-                                       uint32_t element_size,
-                                       uint32_t *n_elements);
-
-/* ---- property payloads ------------------------------------------------ */
-
-typedef struct {
-    uint8_t  format;          /* validated 8/16/32 */
-    uint32_t n_units;         /* as received */
-    size_t   nbytes;           /* n_units * format / 8 */
-    size_t   padded_bytes;   /* pad4(nbytes) */
-} y11_safe_property;
-
-y11_safe_status y11_validate_property_payload(const uint8_t *body,
-                                              size_t avail,
-                                              size_t fixed_part,
-                                              y11_safe_property *out);
-
-/* ---- error/reply framing ---------------------------------------------- */
-
-/*
- * Formats a 32-byte error frame into out (caller provides 32 bytes).
- * code is a core or extension error code; bad_value the failing
- * resource/value; major_op/minor_op from the offending request.
- */
-void y11_format_error_frame(uint8_t out[32],
-                            uint8_t code,
-                            uint32_t bad_value,
-                            uint16_t sequence,
-                            uint8_t major_op,
-                            uint8_t minor_op);
-
-/*
- * Reply-length word for the CARD32 length field (bytes after the first
- * 32). Returns 0 on overflow (payload + 32 not representable), which
- * the caller must treat as BAD_LENGTH.
- */
-uint32_t y11_safe_reply_length_words(size_t payload_bytes,
-                                     uint8_t *overflow);
+/* Landed in Phase 0 (stub bodies; full parses are Phase 1). */
+y11_safe_status y11_handshake_parse_header(const uint8_t *buf, size_t len,
+                                           struct y11_handshake_req *out);
+y11_safe_status y11_frame_request(const uint8_t *buf, size_t len,
+                                  uint8_t big_req_enabled,
+                                  struct y11_request_frame *out);
+y11_safe_status y11_validate_property_payload(uint8_t format,
+                                              uint32_t num_items,
+                                              size_t actual_bytes);
 
 #endif /* Y11_SAFE_H */
 ```
 
+Remaining surface, added with the phases that need them:
+
+```c
+/* Phase 2 */
+y11_safe_status y11_validate_value_mask(const uint8_t *body, size_t avail,
+                                        size_t fixed_part, uint32_t mask,
+                                        uint32_t mask_valid,
+                                        uint32_t *n_values);
+y11_safe_status y11_safe_validate_list(const uint8_t *body, size_t avail,
+                                       size_t fixed_part,
+                                       uint32_t element_size,
+                                       uint32_t *n_elements);
+/* Phase 3 */
+void y11_format_error_frame(uint8_t out[32], uint8_t code,
+                            uint32_t bad_value, uint16_t sequence,
+                            uint8_t major_op, uint8_t minor_op);
+uint32_t y11_safe_reply_length_words(size_t payload_bytes,
+                                     uint8_t *overflow);
+```
+
 Linkage notes for the thorn ecosystem:
 
-- `liby11_safe.a` is a **plain C-ABI static library**, not a pith plugin:
-  no `PITH_FFI_LONG` crossing, no `c_<author>_<module>_<fn>` mangling.
-  Symbols keep their `y11_safe_*` / `y11_*` names exactly as declared here.
-- Built as a single `#![no_std]` crate with
-  `--crate-type=staticlib` via the thorn-rs planner (env scrub,
-  `--rustc` > `RUSTC` > `PATH`), honoring the one-crate-per-C-link rule:
-  all of §2.1 is one crate. `core` and `compiler_builtins` come along in
-  the archive; nothing else may be linked.
+- `liby11_safe.a` is a **plain C-ABI static library**, not a pith
+  plugin: no `PITH_FFI_LONG` crossing, no `c_<author>_<module>_<fn>`
+  mangling. Symbols keep their `y11_*` names exactly as declared here.
+- Built as a single `#![no_std]` crate via `rust.crate()` in
+  build.thorn (thorn-rs plans `rustc --crate-type=staticlib`), honoring
+  the one-crate-per-C-link rule: all validators are one crate. `core`
+  and `compiler_builtins` come along in the archive; nothing else may
+  be linked. The audit edge (the `rust.crate` header argument) fails
+  the build on any missing expected symbol.
 
 ## 4. Step-by-Step Migration Plan
 
@@ -258,15 +214,25 @@ run *in front of* the existing C checks first (dual-verify), then the C
 check is deleted only once the golden corpus proves byte-identical
 behavior.
 
-### Phase 0 — corpus and gates (no behavior change)
+### Phase 0 — scaffolding and gates (no behavior change)
+
+Landed: `include/y11_safe.h` contract, the `rust/y11_safe` `#![no_std]`
+crate with stub bodies, build.thorn wiring through thorn-rs
+(`rust.crate` + the `test_safe_stub` target), and the C smoke harness
+(`tests/test_safe_stub.c`). Verified: `thorn build --engine ninja` →
+`ninja` builds `liby11_safe.a`, the audit stamps
+`.thorn-rs/y11_safe.verified` with zero missing symbols, the server
+links with the archive and serves, and the stub test exits 0.
+
+Still owed by later phases:
 
 1. Land the loopback fuzz harness (C, `tests/wirefuzz.c`): a headless
    server + a client that replays (a) the per-opcode header-only probe
    that found §1.5, (b) a recorded corpus of well-formed requests from
    the existing raw-socket probes, (c) random truncations/bit flips.
    Gate: no crash, and byte-identical error frames per corpus entry.
-2. Freeze `include/y11_safe.h` (§3) — signature changes after this
-   point require a version bump of the header.
+2. Header changes after this point require a version bump of
+   `include/y11_safe.h` (frozen by the audit).
 3. Track in CI: `make` (warnings must stay at zero) + wirefuzz green,
    alongside the existing dwm session smoke.
 
