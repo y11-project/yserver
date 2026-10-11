@@ -430,14 +430,20 @@ static int y11_xkb_get_device_info(struct y11_client *c)
  * narrows it, through the first detail pair's select word (bytes
  * 18-19 of the request; that pair belongs to StateNotify because it
  * is the lowest class bit carrying details). */
-static void y11_xkb_select_events(struct y11_client *c, const uint8_t *pkt,
-                                  size_t len)
+static int y11_xkb_select_events(struct y11_client *c, const uint8_t *pkt,
+                                 size_t len)
 {
     struct y11_xkb_watch *w;
-    uint16_t affect = y11_wire_get16(pkt + 6);
-    uint16_t clear = y11_wire_get16(pkt + 8);
-    uint16_t select_all = y11_wire_get16(pkt + 10);
-    uint16_t selected;
+    uint16_t affect, clear, select_all, selected;
+
+    /* The fixed SelectEvents part is 16 bytes; detail words follow. */
+    if (len < 16u)
+        return y11_dispatch_bad_length(c, pkt[0]);
+
+
+    affect = y11_wire_get16(pkt + 6);
+    clear = y11_wire_get16(pkt + 8);
+    select_all = y11_wire_get16(pkt + 10);
 
     selected = affect & (uint16_t)~clear & select_all;
     if ((affect & Y11_XKB_STATE_NOTIFY_MASK) != 0 &&
@@ -448,16 +454,17 @@ static void y11_xkb_select_events(struct y11_client *c, const uint8_t *pkt,
     for (w = y11_xkb_watches; w != NULL; w = w->next) {
         if (w->client == c) {
             w->selected = selected;
-            return;
+            return 0;
         }
     }
     w = malloc(sizeof(*w));
     if (w == NULL)
-        return;
+        return 0;
     w->client = c;
     w->selected = selected;
     w->next = y11_xkb_watches;
     y11_xkb_watches = w;
+    return 0;
 }
 
 /* Drop a disconnecting client's event selections. */
@@ -527,8 +534,7 @@ int y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_XKB_REQ_USE_EXTENSION:
         return y11_xkb_use_extension(c);
     case Y11_XKB_REQ_SELECT_EVENTS:
-        y11_xkb_select_events(c, pkt, len);
-        return 0;               /* request-only: the server sends no reply */
+        return y11_xkb_select_events(c, pkt, len);
     case Y11_XKB_REQ_BELL:
     case Y11_XKB_REQ_LATCH_LOCK_STATE:
     case Y11_XKB_REQ_SET_CONTROLS:

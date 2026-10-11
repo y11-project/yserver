@@ -872,7 +872,9 @@ int y11_input_req_get_keyboard_mapping(struct y11_client *c,
     uint8_t *data;
     int i, j;
 
-    (void)len;
+    /* first-keycode and count ride in two payload bytes plus two pad. */
+    if (len - data_off != 4u)
+        return y11_dispatch_bad_length(c, pkt[0]);
     if (count == 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, 0, pkt[0]);
         return 0;

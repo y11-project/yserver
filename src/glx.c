@@ -515,6 +515,8 @@ int y11_glx_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_GLX_CREATE_CONTEXT:
     case Y11_GLX_CREATE_NEW_CONTEXT:
     case Y11_GLX_CREATE_CONTEXT_ATTRIBS_ARB:
+        if (len - data_off < 4u)
+            return y11_dispatch_bad_length(c, pkt[0]);
         y11_glx_ctx_create(c, y11_wire_get32(pkt + data_off));
         return 0;               /* no reply */
     case Y11_GLX_DESTROY_CONTEXT:
