@@ -1,5 +1,4 @@
-# Y11 - core X11 display server daemon for The Y11 Project.
-# POSIX make: no GNU extensions (no wildcard, no patsubst, no :=).
+# Y11 display server.
 # Copyright (c) 2026 The Y11 Project
 # SPDX-License-Identifier: BSD-2-Clause
 
@@ -7,32 +6,25 @@ CC       = cc
 CFLAGS   = -std=c99 -pedantic -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L $(DRM_INCS)
 LDFLAGS  =
 
-# OS detection via uname -s.  The "!=" shell-assignment operator is
-# supported by BSD make and by GNU make >= 4.0.  FreeBSD keeps its ports
-# tree under /usr/local, so its include and library paths are appended;
-# other systems (e.g. Linux) use the compiler defaults.
-UNAME_S != uname -s
+UNAME_S  != uname -s
 FreeBSD_INCS = -I/usr/local/include
 FreeBSD_LIBS = -L/usr/local/lib
-INCS      = -Iinclude $($(UNAME_S)_INCS)
-LIBS      = $($(UNAME_S)_LIBS)
+INCS     = -Iinclude $($(UNAME_S)_INCS)
+LIBS     = $($(UNAME_S)_LIBS)
 
-# DRM/KMS and seat: libdrm via pkg-config (headers + lib), libseat via its
-# vendored header (include/libseat.h) linked by soname where the dev package
-# is absent.  The "!=" shell assignment is plain BSD/GNU make, not $(shell).
-DRM_INCS  != pkg-config --cflags libdrm 2>/dev/null || echo
-DRM_LIBS  != pkg-config --libs libdrm 2>/dev/null || echo -ldrm
-Linux_SEATLIB  = -l:libseat.so.1
-FreeBSD_SEATLIB = -lseat
+DRM_INCS != pkg-config --cflags libdrm 2>/dev/null || echo
+DRM_LIBS != pkg-config --libs libdrm 2>/dev/null || echo -ldrm
+Linux_SEATLIB    = -l:libseat.so.1
+FreeBSD_SEATLIB  = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
-HDRS = include/y11.h include/wire.h include/kms.h include/libseat.h
-OBJDIR  = out/artifacts
-OBJS = $(OBJDIR)/main.o $(OBJDIR)/client.o $(OBJDIR)/dispatch.o $(OBJDIR)/atom.o $(OBJDIR)/resource.o $(OBJDIR)/events.o $(OBJDIR)/window.o $(OBJDIR)/pixmap.o $(OBJDIR)/gc.o $(OBJDIR)/render.o $(OBJDIR)/damage.o $(OBJDIR)/input.o $(OBJDIR)/grab.o $(OBJDIR)/session.o $(OBJDIR)/drm.o $(OBJDIR)/scanout.o $(OBJDIR)/shm.o $(OBJDIR)/dri3.o $(OBJDIR)/present.o $(OBJDIR)/property.o $(OBJDIR)/glx.o $(OBJDIR)/selection.o $(OBJDIR)/xrender.o $(OBJDIR)/evdev.o $(OBJDIR)/xkb.o $(OBJDIR)/cursor.o $(OBJDIR)/saver.o
+HDRS     = include/y11.h include/wire.h include/kms.h include/libseat.h
+OBJDIR   = out/artifacts
+OBJS     = $(OBJDIR)/main.o $(OBJDIR)/client.o $(OBJDIR)/dispatch.o $(OBJDIR)/atom.o $(OBJDIR)/resource.o $(OBJDIR)/events.o $(OBJDIR)/window.o $(OBJDIR)/pixmap.o $(OBJDIR)/gc.o $(OBJDIR)/render.o $(OBJDIR)/damage.o $(OBJDIR)/input.o $(OBJDIR)/grab.o $(OBJDIR)/session.o $(OBJDIR)/drm.o $(OBJDIR)/scanout.o $(OBJDIR)/shm.o $(OBJDIR)/dri3.o $(OBJDIR)/present.o $(OBJDIR)/property.o $(OBJDIR)/glx.o $(OBJDIR)/selection.o $(OBJDIR)/xrender.o $(OBJDIR)/evdev.o $(OBJDIR)/xkb.o $(OBJDIR)/cursor.o $(OBJDIR)/saver.o
 
-PREFIX  = /usr/local
-BINDIR  = $(PREFIX)/bin
-DESTDIR =
+PREFIX   = /usr/local
+BINDIR   = $(PREFIX)/bin
+DESTDIR  =
 
 all: out/y11
 
@@ -120,6 +112,12 @@ $(OBJDIR)/evdev.o: src/evdev.c $(HDRS)
 $(OBJDIR)/xkb.o: src/xkb.c $(HDRS)
 	$(CC) $(CFLAGS) $(INCS) -c src/xkb.c -o $@
 
+$(OBJDIR)/cursor.o: src/cursor.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/cursor.c -o $@
+
+$(OBJDIR)/saver.o: src/saver.c $(HDRS)
+	$(CC) $(CFLAGS) $(INCS) -c src/saver.c -o $@
+
 clean:
 	rm -rf out
 
@@ -128,9 +126,3 @@ install: all
 	install -m 0755 out/y11 $(DESTDIR)$(BINDIR)/y11
 
 .PHONY: all clean install
-
-$(OBJDIR)/cursor.o: src/cursor.c $(HDRS)
-	$(CC) $(CFLAGS) $(INCS) -c src/cursor.c -o $@
-
-$(OBJDIR)/saver.o: src/saver.c $(HDRS)
-	$(CC) $(CFLAGS) $(INCS) -c src/saver.c -o $@
