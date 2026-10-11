@@ -10,6 +10,9 @@
 
 #include "y11.h"
 #include "wire.h"
+#ifdef Y11_DUAL_VERIFY
+#include "safe.h"
+#endif
 
 /* ---- storage ------------------------------------------------------------------ */
 
@@ -185,6 +188,20 @@ int y11_property_req_change(struct y11_client *c, const uint8_t *pkt,
     }
 
     nbytes = (size_t)nunits * (size_t)format / 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        y11_safe_status st = y11_validate_property_payload(
+            format, nunits, len - data_off - 20u);
+
+        if (st == Y11_SAFE_INVALID_HEADER) {
+            y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, format,
+                                    pkt[0]);
+            return 0;
+        }
+        if (st != Y11_SAFE_OK)
+            return y11_dispatch_bad_length(c, pkt[0]);
+    }
+#endif
     if (len - data_off - 20u < y11_wire_pad4((uint32_t)nbytes)) {
         /* the wire data is padded to a 4-byte boundary */
         return y11_dispatch_bad_length(c, pkt[0]);
