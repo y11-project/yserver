@@ -3,3 +3,6 @@
 y11
 dwm/dwm
 test.sh
+out/
+.ninja_deps
+.ninja_log

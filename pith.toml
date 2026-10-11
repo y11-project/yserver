@@ -1,0 +1,6 @@
+# Project plugin wiring for the thorn build (build.thorn).
+# thorn.toml would take precedence if it existed; pith.toml is the
+# fallback the loader reads.  A plain local path selects the plugin
+# build in the sibling checkout: <path>/plugin.o + <path>/manifest.
+[plugins]
+thorn-rs = "../thorn-rs/dist"
