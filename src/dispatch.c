@@ -418,10 +418,18 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         rep.present = 1;
         rep.major_opcode = (uint8_t)Y11_XFIXES_EXT_OPCODE;
     }
+    /*
+     * GLX stays unadvertised.  GDK probes it at display open and hands
+     * the connection to threaded GL stacks, whose worker threads race
+     * Xlib on connections that are not XInitThreads-safe; the first
+     * GTK client reliably wedges its event queue that way (events are
+     * read off the socket but never dispatched, so the window never
+     * takes input).  EGL does not use GLX, so direct-rendering clients
+     * that go through EGL keep working.
+     */
     if (name_len == (uint16_t)(sizeof(Y11_GLX_NAME) - 1) &&
         memcmp(name, Y11_GLX_NAME, name_len) == 0) {
-        rep.present = 1;
-        rep.major_opcode = (uint8_t)Y11_GLX_EXT_OPCODE;
+        rep.present = 0;
     }
     if (name_len == (uint16_t)(sizeof(Y11_RENDER_NAME) - 1) &&
         memcmp(name, Y11_RENDER_NAME, name_len) == 0) {
