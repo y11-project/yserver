@@ -1,0 +1,17 @@
+# y11_safe - metadata only.  The build is driven by thorn-rs (rustc
+# --crate-type staticlib, no Cargo); this file exists for rust-analyzer.
+[package]
+name = "y11_safe"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
