@@ -175,22 +175,22 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
 #endif /* Y11_SAFE_H */
 ```
 
-Remaining surface, added with the phases that need them:
+Landed with Phase 2: `y11_validate_value_mask(value_mask, payload_len)`
+(pure popcount arithmetic; valid-mask policy stays with the caller)
+and `y11_format_error(...)` (the canonical 32-byte frame, fields
+encoded in the client byte order, sequence truncated to its CARD16
+wire width).  `y11_validate_property_payload` moved to its own module
+and tightened: format outside 8/16/32 is INVALID_HEADER and the padded
+item count must match the request body exactly.
+
+Remaining surface:
 
 ```c
-/* Phase 2 */
-y11_safe_status y11_validate_value_mask(const uint8_t *body, size_t avail,
-                                        size_t fixed_part, uint32_t mask,
-                                        uint32_t mask_valid,
-                                        uint32_t *n_values);
+/* Phase 3 */
 y11_safe_status y11_safe_validate_list(const uint8_t *body, size_t avail,
                                        size_t fixed_part,
                                        uint32_t element_size,
                                        uint32_t *n_elements);
-/* Phase 3 */
-void y11_format_error_frame(uint8_t out[32], uint8_t code,
-                            uint32_t bad_value, uint16_t sequence,
-                            uint8_t major_op, uint8_t minor_op);
 uint32_t y11_safe_reply_length_words(size_t payload_bytes,
                                      uint8_t *overflow);
 ```
@@ -252,6 +252,13 @@ Still owed by later phases:
 4. Delete the duplicated C arithmetic; wirefuzz stays green.
 
 ### Phase 2 — value-mask and fixed-size table
+
+Landed: `y11_validate_value_mask` and the tightened
+`y11_validate_property_payload` (exact padded sizing) plus
+`y11_format_error`, verified by tests/test_safe_phase2.c. The C
+call-site adoption (CreateWindow/ChangeWindowAttributes/ConfigureWindow
+/CreateGC/ChangeGC consulting the validator, and the error sender
+collapsing onto the formatter) is the next step.
 
 1. Move the §1.3 popcount discipline into
    `y11_validate_value_mask`; the three window.c sites and the two
