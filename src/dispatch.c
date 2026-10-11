@@ -12,6 +12,12 @@
 #include "y11.h"
 #include "wire.h"
 
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
+
+#include "safe.h"
+#endif
+
 /* ---- reply / error encoding ------------------------------------------------ */
 
 /*
@@ -69,6 +75,17 @@ void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
         fprintf(stderr, "y11: client %d: error code %u res 0x%lx major %u\n",
                 c->slot, code, (unsigned long)resource_id, major_opcode);
 
+#ifdef Y11_DUAL_VERIFY
+    {
+        y11_safe_status st = y11_format_error(
+            code, major_opcode, 0, c->sequence_number, resource_id,
+            (uint8_t)'l', (uint8_t *)&err, sizeof(err));
+
+        assert(st == Y11_SAFE_OK);
+        y11_dispatch_send_reply(c, &err, sizeof(err));
+        return;
+    }
+#endif
     memset(&err, 0, sizeof(err));
     err.type = 0;
     err.error_code = code;
