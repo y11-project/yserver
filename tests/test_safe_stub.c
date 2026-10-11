@@ -47,9 +47,9 @@ int main(void)
     if (st != Y11_SAFE_OK)
         return 7;
 
-    /* bad format and overflowing item counts are both mismatches */
+    /* format outside 8/16/32 is a header violation */
     st = y11_validate_property_payload(7, 1, 16);
-    if (st != Y11_SAFE_PAYLOAD_MISMATCH)
+    if (st != Y11_SAFE_INVALID_HEADER)
         return 8;
     st = y11_validate_property_payload(16, 3, 4);
     if (st != Y11_SAFE_PAYLOAD_MISMATCH)

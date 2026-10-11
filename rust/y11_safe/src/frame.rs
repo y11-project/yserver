@@ -4,8 +4,7 @@
 
 use crate::error::{
     get16, get32, Y11_SAFE_INSUFFICIENT_DATA, Y11_SAFE_INVALID_HEADER,
-    Y11_SAFE_LENGTH_OVERFLOW, Y11_SAFE_OK, Y11_SAFE_PAYLOAD_MISMATCH,
-    Y11SafeStatus,
+    Y11_SAFE_LENGTH_OVERFLOW, Y11_SAFE_OK, Y11SafeStatus,
 };
 
 /// struct y11_request_frame (include/y11_safe.h).
@@ -88,25 +87,3 @@ pub extern "C" fn y11_frame_request(
     Y11_SAFE_OK
 }
 
-/*
- * ChangeProperty payload arithmetic (complete: the Phase 0 pure-math
- * validator).  format outside 8/16/32, or a padded item count that
- * outgrows the request body, is PAYLOAD_MISMATCH.  64-bit math: the
- * u32 pad4 wrap only occurs for item counts the receive cap forbids.
- */
-#[no_mangle]
-pub extern "C" fn y11_validate_property_payload(
-    format: u8,
-    num_items: u32,
-    actual_bytes: usize,
-) -> Y11SafeStatus {
-    if format != 8 && format != 16 && format != 32 {
-        return Y11_SAFE_PAYLOAD_MISMATCH;
-    }
-    let nbytes = (num_items as u64) * (format as u64) / 8;
-    let padded = (nbytes + 3) & !3u64;
-    if padded > actual_bytes as u64 {
-        return Y11_SAFE_PAYLOAD_MISMATCH;
-    }
-    Y11_SAFE_OK
-}
