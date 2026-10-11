@@ -1,10 +1,5 @@
 /*
- * atom.c - Atom subsystem for the Y11 display server.
- *
- * Atoms 1-68 are the predefined X11 core atoms (Xatom.h order) and are
- * held in a static array.  Atoms 69 and up are dynamic and live in a
- * simple chained hash table.  InternAtom (opcode 16) and GetAtomName
- * (opcode 17) are implemented here.
+ * atom.c - Atoms and the EWMH root properties.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -157,13 +152,8 @@ int y11_atom_init(void)
     return 0;                   /* static tables need no setup */
 }
 
-/*
- * Intern the EWMH atoms and publish the standard root properties:
- * _NET_SUPPORTED lists every supported _NET atom, _NET_CLIENT_LIST
- * starts empty (the window manager maintains it), _NET_ACTIVE_WINDOW
- * starts at 0.  WM_PROTOCOLS / WM_DELETE_WINDOW are interned so window
- * managers can route clean client close requests.
- */
+/* Intern the EWMH atoms and publish the root properties; client-list
+ * stays empty for the WM to maintain. */
 void y11_atom_publish_root_properties(struct y11_window *root)
 {
     uint32_t ids[sizeof(y11_ewmh_atoms) / sizeof(y11_ewmh_atoms[0])];
@@ -249,11 +239,7 @@ void y11_atom_shutdown(void)
     y11_atom_next_id = Y11_PREDEF_ATOM_COUNT + 1;
 }
 
-/*
- * Return the atom id for name, creating a dynamic atom (69+) unless
- * only_if_exists is true.  Returns None (0) when not found and
- * only_if_exists is set, or on allocation failure.
- */
+/* Atom id for name, creating 69+ unless only_if_exists. */
 yid_t y11_atom_intern(const char *name, size_t len, int only_if_exists)
 {
     yid_t id;

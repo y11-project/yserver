@@ -1,17 +1,5 @@
 /*
- * dri3.c - DRI3 extension for the Y11 display server: direct rendering
- * infrastructure buffer passing.
- *
- * DRI3Open hands the client an authenticated DRM render node file
- * descriptor through SCM_RIGHTS, letting Mesa open the GPU without
- * root.  DRI3PixmapFromBuffer imports a client DMA-BUF through DRM
- * Prime into a server GEM handle wrapped as a pixmap; DRI3Buffer-
- * FromPixmap exports the reverse.  Fences arrive as shared xshmfence
- * pages that the server triggers when a presented buffer becomes
- * idle again.
- *
- * GEM and Prime ioctls are unprivileged operations on the render
- * node; no DRM master is needed for any of this.
+ * dri3.c - DRI3 extension: buffer passing and fences.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -51,12 +39,8 @@ enum {
 static int y11_dri3_fd = -1;    /* render (or card) node fd */
 static bool y11_dri3_fd_owned;  /* we opened it (vs borrowed) */
 
-/*
- * Acquire a DRM device fd for GEM/Prime operations: prefer the
- * session's card fd, then probe render and card nodes directly,
- * keeping the first that actually supports dumb buffers (some
- * drivers, e.g. i915 render nodes, refuse CREATE_DUMB with EPERM).
- */
+/* Card fd for GEM/Prime: session fd first, else the first node that
+ * supports dumb buffers (i915 render nodes refuse them with EPERM). */
 static int y11_dri3_probe(int fd)
 {
     struct drm_mode_create_dumb create;
@@ -202,13 +186,8 @@ static int y11_dri3_query_version(struct y11_client *c, const uint8_t *pkt,
 
 /* ---- DRI3Open (1) ----------------------------------------------------------- */
 
-/*
- * Clients receive a render node fd, like on a real server: Mesa's
- * driver allocates real GEM buffers through it (the i915 render node
- * refuses dumb buffers with EPERM, but direct rendering never needs
- * them).  The server keeps its own card fd for Prime imports and the
- * dumb-buffer CPU maps used by the Present blit path.
- */
+/* Clients get the render node fd, like on a real server; the server
+ * keeps its card fd for Prime imports and dumb-buffer maps. */
 static int y11_dri3_client_fd(void)
 {
     static const char *const render_paths[] = {
@@ -482,13 +461,9 @@ static int y11_dri3_buffer_from_pixmap(struct y11_client *c,
 /* ---- DRI3FenceFromFD (4) ------------------------------------------------------------- */
 
 /*
- * DRI3 fences are shared-memory xshmfence pages: the client mmaps a
- * page, hands the fd over, and then waits on the page's 32-bit value
- * with futexes.  Triggering the fence means storing a non-zero value
- * and waking the waiters, exactly like libxshmfence does.  Mesa wraps
- * every DRI3 swapchain buffer in one and passes its XID as the idle
- * fence of PresentPixmap: the server triggers it once the buffer is
- * no longer needed for scanout.
+ * DRI3 fences are xshmfence pages: trigger = store a non-zero value
+ * and futex-wake.  Mesa passes one as PresentPixmap's idle fence and
+ * the server triggers it once the buffer leaves scanout.
  */
 struct y11_dri3_fence {
     struct y11_dri3_fence *next;

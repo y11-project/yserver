@@ -1,13 +1,5 @@
 /*
- * gc.c - Graphics contexts for the Y11 display server.
- *
- * A GC holds the mutable rasterization state used by the drawing
- * requests.  Attributes arrive through the 23-bit X11 GC value mask;
- * every set bit consumes one 4-byte slot in the wire stream, in
- * increasing bit order (GCFunction is bit 0, GCArcMode is bit 22).
- *
- * Attributes y11 does not act on yet (tiles, stipples, dashes, fonts)
- * are accepted and ignored so headless clients keep working.
+ * gc.c - Graphics contexts.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -82,11 +74,8 @@ void y11_gc_purge_client(struct y11_client *c)
 
 /* ---- attribute updates -------------------------------------------------------------- */
 
-/*
- * Parse the wire value mask: 4 bytes per set bit, in increasing bit
- * order.  Only the attributes y11 stores are consumed; the rest are
- * accepted and ignored.  Returns an error code (0 on success).
- */
+/* Parse a value mask: 4 bytes per set bit; unstored attributes are
+ * accepted and ignored. */
 static uint8_t y11_gc_parse_values(struct y11_gc *gc, uint32_t mask,
                                    const uint8_t *vals)
 {
@@ -308,11 +297,7 @@ badlength:
     return 0;
 }
 
-/*
- * CopyGC (opcode 57): source gc, destination gc, value mask.  The mask
- * selects which attributes to copy; no value list follows on the wire.
- * The clip rectangle list is never copied.
- */
+/* CopyGC (57): the mask picks attributes; the clip list never copies. */
 int y11_gc_req_copy(struct y11_client *c, const uint8_t *pkt,
                     size_t len, size_t data_off)
 {

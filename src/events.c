@@ -1,11 +1,5 @@
 /*
- * events.c - 32-byte event packet crafting, mask matching and delivery
- * for the Y11 display server.
- *
- * Every X11 event is exactly 32 bytes on the wire: byte 0 carries the
- * event code, byte 1 an event-specific detail, and bytes 2-3 the target
- * client's current sequence number (low 16 bits).  Events are queued
- * non-blockingly into the target client's output ring buffer.
+ * events.c - Event crafting and mask routing.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -47,12 +41,9 @@ static void y11_event_set_type(void *event, uint8_t type)
 }
 
 /*
- * Deliver a notification event about `win` to every subscriber of `win`
- * holding StructureNotifyMask (event field = win) and every subscriber of
- * `win->parent` holding SubstructureNotifyMask (event field = parent).
- * The `event` field sits at bytes 4-7 of every structure in the
- * notification family (DestroyNotify, UnmapNotify, MapNotify,
- * ReparentNotify, ConfigureNotify), so one helper patches it for all.
+ * Notify `win`'s StructureNotifyMask subscribers (event field = win)
+ * and the parent's SubstructureNotifyMask subscribers (event field =
+ * parent).  Bytes 4-7 are the event field in this whole family.
  */
 static void y11_event_notify_family(struct y11_window *win, void *event)
 {
@@ -89,13 +80,8 @@ static void y11_event_deliver(struct y11_window *win, uint32_t mask_bit,
 
 /* ---- hit-testing -------------------------------------------------------------- */
 
-/*
- * Return the deepest viewable InputOutput window under the root-relative
- * point, or NULL when there is no root.  Stacking runs bottom-to-top
- * from first_child to last_child, so scan each child list topmost
- * (last_child) first.  A window contains the point when it falls inside
- * the window including its border.
- */
+/* Deepest viewable InputOutput window under the point; scan children
+ * topmost (last_child) first. */
 struct y11_window *y11_window_at_point(int32_t x, int32_t y)
 {
     struct y11_window *win = y11_window_get(Y11_SCREEN_ROOT);
@@ -276,11 +262,8 @@ void y11_event_send_map_request(struct y11_window *win)
     y11_event_dispatch32(wm, &ev, sizeof(ev));
 }
 
-/*
- * CirculateRequest (27): dispatched ONLY to the window's redirecting
- * client, carrying the child the request would move and the requested
- * direction in `place` (0 = raise it to the top, 1 = lower it).
- */
+/* CirculateRequest (27): to the redirecting client only; `place`
+ * carries the direction. */
 void y11_event_send_circulate_request(struct y11_window *parent,
                                       struct y11_window *child,
                                       uint8_t place)
@@ -301,12 +284,8 @@ void y11_event_send_circulate_request(struct y11_window *parent,
     y11_event_dispatch32(wm, &ev, sizeof(ev));
 }
 
-/*
- * CirculateNotify (26): delivered like the other structure notifications
- * (StructureNotifyMask on the window, SubstructureNotifyMask on the
- * parent), with the window's new stacking rank in `place` (0 = top,
- * 1 = bottom).
- */
+/* CirculateNotify (26): standard notification pair; `place` carries
+ * the new rank. */
 void y11_event_send_circulate_notify(struct y11_window *win, uint8_t place)
 {
     y11_circulate_event ev;

@@ -1,19 +1,5 @@
 /*
- * glx.c - GLX visual bridge for the Y11 display server.
- *
- * Legacy OpenGL clients (glxgears, glxinfo) speak the GLX wire
- * extension before they ever touch DRI3: they negotiate a version,
- * discover visuals and fbconfigs, and create a context.  In direct
- * rendering none of that needs a server-side GL: Mesa builds the real
- * GPU context on the client side using the render node fd it receives
- * from DRI3Open, swaps through Present, and only uses these replies to
- * pick a pixel format.  This module answers exactly those questions
- * and hands everything else back to the DRI3/Present path.
- *
- * Wire layouts are from glxproto.h / the Mesa client parsers
- * (src/glx/glxext.c): GetVisualConfigs returns 18 fixed properties
- * per visual (__GLX_MIN_CONFIG_PROPS); GetFBConfigs returns tagged
- * attribute/value pairs.
+ * glx.c - GLX visual bridge for direct rendering clients.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -148,15 +134,9 @@ struct y11_glx_pair {
 };
 
 /*
- * One TrueColor visual matching the root: 24-bit depth, 32bpp,
- * double buffered, 24/8 depth/stencil.  This describes exactly what
- * the DRI3/Present path can present.
- *
- * The 18 fixed GLX 1.0 properties are followed by tagged attribute
- * pairs.  Mesa matches the advertised config against the driver's
- * configs attribute by attribute (driConfigEqual), so everything the
- * driver reports must line up: no accumulation buffers, texture
- * binding enabled, Y inverted like the driver's own configs.
+ * One TrueColor visual, 24/8 depth/stencil.  Mesa matches configs
+ * attribute by attribute: no accumulation, bind-to-texture on,
+ * Y inverted - mirror what a modern driver reports.
  */
 #define Y11_GLX_VISUAL_COUNT 1
 #define Y11_GLX_MIN_PROPS     18
@@ -387,11 +367,7 @@ static int y11_glx_query_server_string(struct y11_client *c,
     return 0;
 }
 
-/*
- * MakeCurrent (5) / MakeContextCurrent (26): reply with a context
- * tag.  Direct contexts never use the tag for rendering, but Mesa
- * records it; hand out a nonzero tag when a context is bound.
- */
+/* MakeCurrent (5)/(26): hand out a nonzero context tag when bound. */
 static int y11_glx_make_current(struct y11_client *c, const uint8_t *pkt,
                                 size_t len, size_t data_off)
 {

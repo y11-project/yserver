@@ -1,12 +1,5 @@
 /*
- * render.c - Drawable resolution and core 2D rasterization for the
- * Y11 display server.
- *
- * Drawables resolve transparently to an on-screen window or an
- * off-screen pixmap: both store linear 32-bit XRGB rows (stride =
- * width * 4).  Solid rectangle fills, blits and image transfers apply
- * the GC's raster operation (GXclear .. GXset) and plane mask, and are
- * clipped to the drawable bounds and the GC clip rectangles.
+ * render.c - Core 2D rasterization over drawables.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -151,12 +144,7 @@ static void y11_render_fill_clipped(y11_drawable_t *d,
 
 /* ---- shared request validation ---------------------------------------------------- */
 
-/*
- * Validate a drawing request's target pair: the GC and drawable must
- * exist, the drawable must have a buffer (not InputOnly), and the
- * depths must agree.  Sends the proper error and returns NULL when
- * invalid; otherwise returns the drawable.
- */
+/* Validate the GC/drawable pair, sending errors; NULL when invalid. */
 static y11_drawable_t *y11_render_validate(struct y11_client *c,
                                            uint8_t opcode, uint32_t gc_id,
                                            uint32_t drawable_id)

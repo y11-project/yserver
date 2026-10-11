@@ -1,7 +1,5 @@
 /*
- * damage.c - Dirty region tracking and Expose dispatch: drawing that
- * overwrites viewable descendants sends them Expose; one event per
- * window per dirty mark (count 0).
+ * damage.c - Dirty region tracking and Expose dispatch.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -57,11 +55,8 @@ static void y11_damage_expose(struct y11_window *win, int32_t x, int32_t y,
     }
 }
 
-/*
- * Recurse into `win`'s subtree: viewable descendants intersecting the
- * region (in `win`'s drawable coordinates) receive Expose translated
- * into their own coordinate space.
- */
+/* Descend `win`'s subtree: viewable descendants get Expose in their
+ * own coordinates. */
 static void y11_damage_descendants(struct y11_window *win, int32_t x,
                                    int32_t y, int32_t w, int32_t h)
 {
@@ -85,11 +80,8 @@ static void y11_damage_descendants(struct y11_window *win, int32_t x,
     }
 }
 
-/*
- * A window's region became visible (mapping) or its content was
- * invalidated: the window's own ExposureMask subscribers and all
- * viewable descendants intersecting the region are notified.
- */
+/* The region became visible or was invalidated: notify the window's
+ * subscribers and viewable descendants. */
 void y11_damage_mapped(struct y11_window *win, int32_t x, int32_t y,
                        uint32_t w, uint32_t h)
 {
@@ -99,12 +91,8 @@ void y11_damage_mapped(struct y11_window *win, int32_t x, int32_t y,
     y11_damage_descendants(win, x, y, (int32_t)w, (int32_t)h);
 }
 
-/*
- * Drawing landed on drawable `d` (a window): viewable descendant
- * windows intersecting the region had their content overwritten and
- * must repaint.  The drawn window itself is not notified: its client
- * just drew there intentionally.
- */
+/* Drawing overwrote descendant content: they must repaint; the
+ * drawing client itself is not notified. */
 void y11_damage_drawn(struct y11_drawable *d, int32_t x, int32_t y,
                       uint32_t w, uint32_t h)
 {

@@ -1,12 +1,5 @@
 /*
- * grab.c - Pointer and keyboard grabs for the Y11 display server.
- *
- * An active grab diverts all pointer or keyboard events exclusively to
- * the grabbing client's window, optionally confined to a rectangle.
- * Passive grabs (GrabButton / GrabKey) are registered on a window and
- * activate implicitly when a matching button or key press arrives
- * while the pointer or focus is inside the grab window's hierarchy; a
- * passive pointer grab ends automatically when all buttons release.
+ * grab.c - Pointer and keyboard grabs.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -199,13 +192,8 @@ void y11_grab_key_release_check(void)
     }
 }
 
-/*
- * Drop a passive-activated keyboard grab on a VT switch: keys held
- * during the switch never get their release events, so the grab's
- * all-keys-released condition would never fire and it would swallow
- * the whole keyboard afterwards.  Explicit GrabKeyboard grabs are
- * left alone - their owners will ungrab or die eventually.
- */
+/* Drop passive grabs on a VT switch: held keys never see releases,
+ * so the all-released condition would never fire. */
 void y11_grab_reset_keyboard(void)
 {
     if (y11_keyboard_grab.active && y11_keyboard_grab.passive) {
@@ -214,12 +202,9 @@ void y11_grab_reset_keyboard(void)
     }
 }
 
-/*
- * Deliver a device event through an active grab: with owner-events off
- * (the simple case) the grabbing client receives events selected in
- * the grab's event mask, as if it had selected them on the grab
- * window; otherwise the grab window's own subscribers get a look.
- */
+/* Deliver through an active grab: owner-events off routes to the
+ * grabbing client by the grab mask; on, the window's subscribers
+ * keep theirs. */
 void y11_grab_deliver(const y11_grab_t *grab, uint8_t type, uint8_t detail,
                       uint32_t mask_bit)
 {

@@ -1,13 +1,5 @@
 /*
- * property.c - Window property storage for the Y11 display server.
- *
- * Properties are (name, type, format, data) tuples attached to
- * windows.  ChangeProperty / GetProperty / ListProperties /
- * DeleteProperty run against a per-window linked list, and every
- * change notifies PropertyChangeMask subscribers with a 32-byte
- * PropertyNotify event.  EWMH root properties (_NET_SUPPORTED and
- * friends) live on the root window and are readable by window
- * managers, exactly like on a full X server.
+ * property.c - Window property storage.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

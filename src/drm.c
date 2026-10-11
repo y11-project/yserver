@@ -1,15 +1,5 @@
 /*
- * drm.c - KMS resource discovery, dumb buffer allocation and modeset
- * for the Y11 display server.
- *
- * Outputs are discovered from the connector list: every connected
- * connector with modes gets a preferred (or first) mode, a compatible
- * encoder/CRTC pair, and two mmap'ed dumb buffers wrapped as DRM
- * framebuffers for double-buffered scanout.
- *
- * All CRTC programming requires DRM master, which the session module
- * acquires through the seat.  Without master nothing here can program
- * hardware, and y11 stays headless.
+ * drm.c - KMS output discovery and dumb buffers.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -260,12 +250,9 @@ int y11_drm_init(struct y11_session *s)
 
 /* Point every output's CRTC at its front buffer. */
 /*
- * Watchdog: an orphaned child (its own session, so process-group
- * signals cannot reach it) that hands the CRTCs back to the console
- * if the server dies without cleanup - SIGKILL, crash, anything.  The
- * parent holds the write end of a pipe; its death closes the pipe and
- * the child restores the saved console state through its own copy of
- * the card fd, which still holds DRM master.
+ * Watchdog: an orphaned child that restores the console if the
+ * server dies without cleanup.  Parent death closes the pipe; the
+ * child's own card fd still holds DRM master.
  */
 static int y11_drm_watchdog_fd = -1;
 static int y11_drm_tty_fd = -1;
@@ -389,12 +376,7 @@ void y11_drm_restore_console(void)
     }
 }
 
-/*
- * Queue a VBlank-synchronized flip of the back buffer: the CRTC
- * switches at the next vertical blank, the completion event arrives on
- * the drm fd and the buffer indices swap so drawing continues on the
- * freshly retired buffer.
- */
+/* Queue a VBlank flip; indices swap when the completion arrives. */
 int y11_drm_page_flip(struct y11_output *out)
 {
     int r;

@@ -1,17 +1,5 @@
 /*
- * kms.h - DRM/KMS modesetting, session control and hardware
- * scanout for the Y11 display server.
- *
- * The session module (src/session.c) authenticates with seatd or
- * systemd-logind through libseat, acquiring the DRM card without root.
- * The DRM module (src/drm.c) discovers connectors, CRTCs and modes,
- * and allocates double-buffered dumb buffers for scanout.  The scanout
- * module (src/scanout.c) blits the root window backbuffer into the
- * scanout buffers and drives VBlank-synchronized page flips.
- *
- * When the seat cannot be acquired (another display server owns DRM
- * master, or no seat manager is running), all of this is inert and
- * y11 runs headless over its UNIX sockets exactly as before.
+ * kms.h - DRM/KMS session, outputs and scanout interface.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

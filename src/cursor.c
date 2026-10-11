@@ -1,11 +1,5 @@
 /*
- * cursor.c - Client-defined cursors for the Y11 display server.
- *
- * ARGB image + hot spot from RENDER's CreateCursor, referenced by
- * windows (CWCursor) and resolved from the deepest window under the
- * pointer up to the root.  Image-less cursors (core font stubs,
- * None) fall back to the built-in arrow.  Pixels are X-order
- * uint32s, the KMS ARGB8888 plane layout.
+ * cursor.c - Client-defined cursors.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -29,12 +23,8 @@ struct y11_cursor_img {
 static struct y11_cursor_img *y11_cursor_list;
 static yid_t y11_cursor_active_id;
 
-/*
- * Register a cursor.  pixels may be NULL, in which case the cursor is
- * a stub: resolving it falls back to the built-in arrow (core
- * cursor-font cursors, which y11 does not rasterize).  pixel rows are
- * stride bytes apart.
- */
+/* Register a cursor; NULL pixels make a stub that resolves to the
+ * built-in arrow.  Rows are stride bytes apart. */
 int y11_cursor_create(yid_t id, struct y11_client *owner,
                       uint16_t width, uint16_t height,
                       int16_t hot_x, int16_t hot_y,
@@ -139,11 +129,7 @@ void y11_cursor_purge_client(struct y11_client *c)
                                 y11_cursor_unlink_and_free);
 }
 
-/*
- * Attach a cursor to a window (XDefineCursor / CWCursor).  Zero means
- * "inherit from the parent".  Returns 0 on success, -1 for an unknown
- * cursor id.
- */
+/* Attach a cursor to a window; 0 inherits from the parent. */
 int y11_cursor_set_window(struct y11_window *win, yid_t cursor)
 {
     if (cursor != 0 && y11_cursor_lookup(cursor) == NULL)
@@ -153,11 +139,7 @@ int y11_cursor_set_window(struct y11_window *win, yid_t cursor)
     return 0;
 }
 
-/*
- * Resolve which cursor belongs at the pointer: the deepest window
- * under the pointer that carries one, root included.  Cheap enough to
- * run on every pointer motion (a short parent walk and an id compare).
- */
+/* Deepest window under the pointer carrying a cursor, root included. */
 void y11_cursor_refresh(void)
 {
     struct y11_window *win;

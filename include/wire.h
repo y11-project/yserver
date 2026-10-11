@@ -1,12 +1,5 @@
 /*
- * wire.h - Binary wire structures for the X11 wire protocol.
- *
- * Every structure below is laid out exactly as specified by the X11 wire
- * protocol.  All members are naturally aligned, so the structures need no
- * compiler packing extensions (strict ISO C99) and may be used directly
- * over 4-byte-aligned buffers.  Multi-byte fields are always accessed
- * through the little-endian helpers at the bottom of this file, making
- * the server independent of host byte order.
+ * wire.h - Wire structs matching the X11 protocol byte-for-byte.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

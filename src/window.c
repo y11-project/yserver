@@ -1,25 +1,5 @@
 /*
- * window.c - Window allocation, tree hierarchy, coordinate calculations
- * and attribute logic for the Y11 display server.
- *
- * The window tree is an N-ary tree built from intrusive doubly-linked
- * lists (parent, first_child, last_child, prev_sibling, next_sibling)
- * for O(1) reparenting and stacking reorders.  The stacking order runs
- * bottom-to-top from first_child to last_child, and newly created
- * windows enter at the bottom.
- *
- * Per the X11 wire standard, a window's (x, y) is the position of its
- * upper-left outer corner relative to the upper-left inner corner of
- * its parent, so abs_x = parent->abs_x + parent->border_width + x.
- * The absolute coordinate cache is invalidated recursively whenever a
- * window moves or is reparented.
- *
- * Substructure redirection contract: only one client at a time may
- * select SubstructureRedirectMask on a window.  While a redirecting
- * client (the window manager) owns a parent, MapWindow and
- * ConfigureWindow requests on its non-override-redirect children are
- * forwarded as MapRequest and ConfigureRequest events instead of being
- * applied directly.
+ * window.c - Window tree, stacking and attributes.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -58,11 +38,7 @@ struct y11_window *y11_window_get(yid_t id)
     return y11_resource_get(id, Y11_RESOURCE_WINDOW);
 }
 
-/*
- * (Re)allocate a window's backing pixel buffer for the current
- * geometry, preserving the top-left content on resize.  InputOnly
- * windows carry no buffer.  Returns -1 on allocation failure.
- */
+/* (Re)allocate the backing buffer, keeping top-left content. */
 int y11_window_sync_drawable(struct y11_window *win)
 {
     size_t stride, size;
@@ -160,12 +136,7 @@ static void y11_window_detach(struct y11_window *win)
     win->next_sibling = NULL;
 }
 
-/*
- * Insert at the top of the parent's stacking order.  The X protocol
- * places newly created and newly reparented windows above their
- * siblings, and the stacking list runs bottom (first_child) to top
- * (last_child).
- */
+/* Insert at the top of the parent's stack (bottom = first_child). */
 static void y11_window_attach_top(struct y11_window *parent,
                                   struct y11_window *child)
 {
@@ -276,13 +247,7 @@ static int y11_window_parent_viewable(const struct y11_window *win)
            win->parent->map_state == Y11_MAP_STATE_VIEWABLE;
 }
 
-/*
- * Propagate a viewability change down the tree: children that are mapped
- * but unviewable flip to viewable when the parent becomes viewable, and
- * viewable children flip to unviewable when it stops being viewable.
- * These transitions are silent; only explicit map/unmap requests
- * generate events.
- */
+/* Propagate viewability down the tree; the transitions are silent. */
 static void y11_window_propagate_map_state(struct y11_window *win,
                                           int viewable)
 {
@@ -326,12 +291,8 @@ static void y11_window_remove_sub(struct y11_window *win, struct y11_client *c)
     }
 }
 
-/*
- * Install `mask` as client `c`'s event subscription on `win`.  Returns 0
- * on success, Y11_ERR_BAD_VALUE for undefined bits, or Y11_ERR_BAD_ACCESS
- * when another client already holds one of the exclusive bits
- * (SubstructureRedirectMask, ResizeRedirectMask, ButtonPressMask).
- */
+/* Install the subscription: BadValue on undefined bits, BadAccess when
+ * another client holds an exclusive bit. */
 static uint8_t y11_window_apply_event_mask(struct y11_window *win,
                                            struct y11_client *c,
                                            uint32_t mask)
@@ -400,11 +361,8 @@ void y11_events_purge_client(struct y11_client *c)
         y11_window_purge_tree(root, c);
 }
 
-/*
- * Recursively destroy windows owned by client `c` (called on
- * disconnect, after its subscriptions are purged).  Destroying a
- * window takes its whole subtree, whatever the owners.
- */
+/* Destroy `c`'s windows on disconnect; a destroy takes the whole
+ * subtree. */
 static void y11_window_destroy_owned_tree(struct y11_window *win,
                                           struct y11_client *c)
 {
@@ -744,12 +702,8 @@ static int y11_window_bad_length(struct y11_client *c, uint8_t opcode)
     return 0;
 }
 
-/*
- * CreateWindow (opcode 1), 32-byte fixed part after the request header:
- * wid, parent, x, y, width, height, border-width, class, visual,
- * value-mask, then the value list.  The depth rides in the header's
- * second byte.
- */
+/* CreateWindow (1): 32-byte fixed part, then the value list; the depth
+ * rides in header byte 1. */
 int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
                           size_t len, size_t data_off)
 {
@@ -950,11 +904,7 @@ int y11_window_req_create(struct y11_client *c, const uint8_t *pkt,
     return 0;
 }
 
-/*
- * ChangeWindowAttributes (opcode 2): window id, value mask, value list.
- * Enforces the single-client exclusive rule for SubstructureRedirectMask,
- * ResizeRedirectMask and ButtonPressMask (BadAccess on conflict).
- */
+/* ChangeWindowAttributes (2): BadAccess on exclusive-bit conflicts. */
 int y11_window_req_change_attributes(struct y11_client *c, const uint8_t *pkt,
                                      size_t len, size_t data_off)
 {
@@ -1140,12 +1090,8 @@ int y11_window_req_destroy_subwindows(struct y11_client *c, const uint8_t *pkt,
 }
 
 /*
- * CirculateWindow (opcode 13): circulate the children of the window:
- * RaiseLowest raises the lowest mapped child that is occluded by
- * another child to the top; LowerHighest lowers the highest mapped
- * child that occludes another child to the bottom.  When the window's
- * substructure is redirected the window manager decides instead: it
- * receives a CirculateRequest carrying the child to move.
+ * CirculateWindow (13): raise/lower the first stackable child; a
+ * redirected substructure sends CirculateRequest to the WM instead.
  */
 #define Y11_CIRCULATE_IS_MAPPED(w) \
     ((w)->map_state != Y11_MAP_STATE_UNMAPPED)
@@ -1226,12 +1172,8 @@ int y11_window_req_circulate(struct y11_client *c, const uint8_t *pkt,
     return 0;                   /* no reply */
 }
 
-/*
- * ClearArea (opcode 61): paint the region with the window's background
- * pixel.  A zero width or height means "to the window edge"; when
- * exposures is set, the window's ExposureMask subscribers receive
- * Expose for the cleared region.
- */
+/* ClearArea (61): background fill; zero extent means the edge, and
+ * `exposures` queues Expose to subscribers. */
 int y11_window_req_clear_area(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off)
 {

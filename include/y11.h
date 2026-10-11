@@ -1,11 +1,5 @@
 /*
- * y11.h - Internal definitions for the Y11 display server daemon.
- *
- * y11 is an ISO C99, POSIX-portable X11-compatible display server.  This
- * header defines the resource identifier type, the per-client connection
- * state and the top-level server object shared between the socket event
- * loop (src/main.c), the connection layer (src/client.c), the request
- * dispatcher (src/dispatch.c) and the atom subsystem (src/atom.c).
+ * y11.h - Internal definitions for the Y11 display server.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -197,12 +191,8 @@ typedef struct y11_rect {
     uint16_t width, height;
 } y11_rect_t;
 
-/*
- * A drawable is any target with a linear 32-bit pixel buffer: an
- * on-screen window or an off-screen pixmap.  Buffers are always stored
- * as 32bpp rows (stride = width * 4); the drawable depth only selects
- * the wire-format conversion at the PutImage/GetImage boundary.
- */
+/* Window or pixmap: always 32bpp rows; depth only picks the wire
+ * conversion at the PutImage/GetImage boundary. */
 typedef struct y11_drawable {
     yid_t                id;
     y11_drawable_type_t  type;
@@ -254,11 +244,8 @@ typedef struct y11_present_flip {
     struct y11_present_flip *next;
 } y11_present_flip_t;
 
-/*
- * MIT-SHM segment: a SysV shared memory segment attached into the
- * server address space.  Clients register one per shmget(2) segment
- * and reference it from ShmPutImage, ShmGetImage and shared pixmaps.
- */
+/* Attached SysV segment, referenced by ShmPutImage/GetImage and
+ * shared pixmaps. */
 struct y11_shm_seg {
     yid_t            id;         /* client-assigned ShmSeg resource ID */
     struct y11_client *owner;
@@ -391,11 +378,8 @@ enum y11_req_opcode {
     Y11_REQ_NO_OPERATION             = 127
 };
 
-/*
- * Drawing requests accepted as no-ops: y11 is headless in phases 1-2,
- * but real clients (which render into pixmaps before they ever create
- * a window) must be able to issue them without a BadRequest error.
- */
+/* Accepted no-ops: clients render into pixmaps before mapping a
+ * window and must not see BadRequest. */
 enum y11_req_draw_opcode {
     Y11_REQ_COPY_PLANE           = 63,
     Y11_REQ_POLY_POINT           = 64,

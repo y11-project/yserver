@@ -1,10 +1,7 @@
 /*
- * safe.h - C-ABI contract for liby11_safe.a, the no_std Rust wire
- * validators (docs/Y11_SAFE_AUDIT.md).  Structs are POD with fixed-width
- * fields; buffers cross as (buf, len) borrows; every call returns
- * y11_safe_status.  The thorn-rs audit compares this header's function
- * declarations against the archive's exported symbols, so every
- * prototype here must exist as #[no_mangle] pub extern "C" in Rust.
+ * safe.h - C-ABI contract for libsafe.a.
+ *
+ * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 #ifndef Y11_SAFE_H
@@ -41,11 +38,7 @@ struct y11_handshake_req {
     uint32_t skip_bytes;    /* pad4(auth_proto_len) + pad4(auth_data_len) */
 };
 
-/*
- * One framed request: the 4-byte core header, or the 8-byte extended
- * header when BIG-REQUESTS is enabled and wire_len reads zero.
- * true_len is the total request size in bytes including the header.
- */
+/* One framed request; true_len counts the whole packet in bytes. */
 struct y11_request_frame {
     uint8_t opcode;
     uint16_t wire_len;      /* raw CARD16; 0 selects the extended form */
@@ -53,22 +46,12 @@ struct y11_request_frame {
     uint32_t true_len;      /* validated total request length in bytes */
 };
 
-/*
- * Parse the fixed SetupRequest header.  len < 12 reports
- * INSUFFICIENT_DATA; otherwise out is filled and OK returned.  The
- * caller still has to buffer skip_bytes more before the handshake
- * completes.
- */
+/* Parse the fixed SetupRequest header; the caller buffers
+ * skip_bytes more to complete the handshake. */
 y11_safe_status y11_handshake_parse_header(const uint8_t *buf, size_t len,
                                            struct y11_handshake_req *out);
 
-/*
- * Frame one request off the stream.  len < 4 (or len < 8 for the
- * extended form selected by big_req_enabled and a zero wire_len)
- * reports INSUFFICIENT_DATA; a declared length that cannot be
- * represented reports LENGTH_OVERFLOW.  On OK, out holds the frame
- * and true_len is the byte count the caller must have buffered.
- */
+/* Frame one request; OK means true_len bytes are buffered. */
 y11_safe_status y11_frame_request(const uint8_t *buf, size_t len,
                                   uint8_t big_req_enabled,
                                   struct y11_request_frame *out);
@@ -82,12 +65,8 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
                                               uint32_t num_items,
                                               size_t actual_bytes);
 
-/*
- * Validate a value-list payload against its bitmask: the list carries
- * exactly one 4-byte value per set bit, so payload_len must equal
- * popcount(value_mask) * 4.  Bits outside a request's valid mask are
- * the caller's policy; this check is pure arithmetic.
- */
+/* One 4-byte value per set mask bit; valid-bit policy is the
+ * caller's. */
 y11_safe_status y11_validate_value_mask(uint32_t value_mask,
                                         size_t payload_len);
 

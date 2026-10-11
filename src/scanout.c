@@ -1,15 +1,5 @@
 /*
- * scanout.c - Hardware scanout for the Y11 display server.
- *
- * The root window's 32bpp software backbuffer is the source of truth
- * for the screen.  Dirty regions are blitted into the back scanout
- * buffer and presented with a VBlank-synchronized page flip; the
- * completion event on the drm fd clears the pending flag and any
- * damage accumulated meanwhile schedules the next frame.  A hardware
- * cursor follows the pointer without touching the scanout buffers.
- *
- * Without a seat (another display server owns DRM master) every entry
- * point is a no-op and y11 stays headless.
+ * scanout.c - Hardware scanout and the KMS cursor.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -33,12 +23,8 @@ struct y11_scanout_damage {
 
 static struct y11_scanout_damage y11_buf_dirty[2];
 
-/* Hardware cursor (legacy KMS API, ARGB).  The BO is always the
- * driver's advertised cursor plane size (i915 only accepts 64x64 or
- * larger power-of-two squares, so smaller images are padded into the
- * plane's top-left corner, exactly like Xorg's modesetting driver).
- * The BO is recreated when a client cursor of a different size is
- * uploaded. */
+/* Hardware cursor BO at the driver's advertised plane size; smaller
+ * images pad into the top-left.  Recreated on size changes. */
 static uint32_t y11_cursor_handle;
 static uint32_t y11_cursor_map_size;
 static uint32_t y11_cursor_map_pitch;
@@ -178,12 +164,9 @@ fail:
 }
 
 /*
- * Upload a client cursor image to the cursor plane.  Pixels arrive in
- * X pixel order (A<<24|R<<16|G<<8|B), which is the KMS ARGB8888
- * layout, so rows copy verbatim.  The image is padded into the
- * driver's fixed-size cursor BO; if KMS rejects it anyway, the
- * recovery guard keeps the failure from recursing through the
- * default-restore path into a stack overflow.
+ * Upload a cursor image: X pixel order equals KMS ARGB8888, so rows
+ * copy verbatim into the padded BO.  The recovery guard prevents
+ * recursion through the default-restore path.
  */
 int y11_scanout_set_cursor(const uint32_t *argb, uint16_t width,
                            uint16_t height, int16_t hot_x, int16_t hot_y)
@@ -338,11 +321,8 @@ void y11_scanout_mark_dirty(int32_t x, int32_t y, uint32_t w, uint32_t h)
 
 /* ---- page flip events ---------------------------------------------------------- */
 
-/*
- * The flip completed at VBlank: the presented buffer is now the front,
- * so the pipeline accepts the next frame.  Damage that arrived while
- * the flip was pending is flushed immediately.
- */
+/* Flip done at VBlank: the pipeline accepts the next frame and
+ * flushes damage queued during the flip. */
 static void y11_scanout_flip_done(int fd, unsigned int sequence,
                                   unsigned int tv_sec, unsigned int tv_usec,
                                   void *user_data)
@@ -447,11 +427,8 @@ static void y11_scanout_blit(struct y11_output *out, int32_t x, int32_t y,
                                      (uint32_t)rows);
 }
 
-/*
- * Blit the accumulated dirty region and queue a page flip.  Skipped
- * while a flip is pending (the dirty region keeps accumulating) or
- * while the session is switched away from the VT.
- */
+/* Blit the dirty region and flip; skipped while a flip is pending
+ * or the session is switched away. */
 void y11_scanout_flush(void)
 {
     struct y11_output *out;
@@ -487,11 +464,7 @@ void y11_scanout_flush(void)
 
 /* ---- lifecycle -------------------------------------------------------------------- */
 
-/*
- * Wire scanout to the root window: enable the hardware cursor on every
- * CRTC, present the initial frame and mark the whole screen dirty so
- * the first flush paints the background.
- */
+/* Wire scanout to the root: cursor on, first frame, full dirty. */
 int y11_scanout_init(y11_drawable_t *root)
 {
     struct y11_output *out;

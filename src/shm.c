@@ -1,18 +1,5 @@
 /*
- * shm.c - MIT-SHM shared memory transport for the Y11 display server.
- *
- * Clients register SysV shared memory segments (ShmAttach) and then
- * reference them directly: ShmPutImage blits pixel rectangles from
- * the client's segment into drawables, ShmGetImage reads pixels back
- * into the segment, and ShmCreatePixmap backs a pixmap with client
- * memory.  Nothing crosses the UNIX socket except the small request
- * itself, and an optional ShmCompletion event reports when the
- * operation is done.
- *
- * Segment ids are validated with shmctl(IPC_STAT) before shmat(2), and
- * every path bounds-checks against the segment size so a hostile
- * client cannot make y11 read or write outside the mapping.  On
- * disconnect every segment is detached with shmdt(2).
+ * shm.c - MIT-SHM shared memory transport.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -55,11 +42,7 @@ static int y11_shm_pixmap_in_seg(void *ptr, void *arg)
            mem < (const uint8_t *)seg->addr + seg->size;
 }
 
-/*
- * Destroy every shared pixmap backed by `seg`.  The memory belongs to
- * the client, so destruction only frees the metadata (is_shm skips the
- * pixel free in y11_pixmap_destroy).
- */
+/* Destroy pixmaps backed by `seg`; the client owns the memory. */
 void y11_shm_purge_pixmaps(struct y11_shm_seg *seg)
 {
     y11_resource_purge_type_arg(Y11_RESOURCE_PIXMAP, seg,
@@ -194,12 +177,8 @@ static int y11_shm_detach(struct y11_client *c, const uint8_t *pkt,
 
 /* ---- ShmPutImage (3) --------------------------------------------------------------- */
 
-/*
- * Blit a sub-rectangle of the client's shared image into a drawable.
- * Bounds are verified against the segment size before any memory is
- * touched; the GXcopy fast path is a row memcpy, other raster ops go
- * through the GC's function and plane mask pixel by pixel.
- */
+/* Blit a sub-rect of the shared image after bounds checks; GXcopy is
+ * a row memcpy, other ops go per pixel. */
 static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
                              size_t len, size_t data_off)
 {

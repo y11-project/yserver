@@ -1,11 +1,5 @@
 /*
- * main.c - Socket creation, signal traps and the non-blocking poll(2)
- * event loop for the Y11 display server daemon.
- *
- * The primary UNIX domain socket is bound at /tmp/.X11-unix/X0 and a
- * symbolic link /tmp/.y11-unix/Y0 -> /tmp/.X11-unix/X0 is maintained.
- * The daemon catches SIGINT/SIGTERM via sigaction and unlinks the
- * sockets after a clean shutdown.
+ * main.c - Sockets, signals and the poll loop.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -464,12 +458,8 @@ int main(int argc, char **argv)
     const char *log_dir = NULL;
     int i;
 
-    /*
-     * Flags: -d/--debug enable verbose logging, --log-dir DIR captures
-     * all server output (startup, errors, verbose debug) into
-     * DIR/y11-<display>.log.  Flags are removed from argv so the
-     * client command stays intact wherever they appear.
-     */
+         /* -d/--debug: verbose logging.  --log-dir DIR captures all
+     * output in DIR/y11-<display>.log.  Flags leave argv intact. */
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0) {
             debug_flag = 1;
@@ -513,12 +503,8 @@ int main(int argc, char **argv)
 
     y11_debug = debug_flag || getenv("Y11_DEBUG") != NULL;
 
-    /*
-     * --log-dir DIR: point stderr at DIR/y11-<display>.log so the whole
-     * run (startup, errors, verbose debug, and the spawned client's
-     * stderr) is captured for diagnosis after the fact.  Truncated per
-     * run so repeated tests read cleanly.
-     */
+         /* --log-dir DIR: stderr lands in DIR/y11-<display>.log,
+     * truncated per run. */
     if (log_dir != NULL) {
         char log_path[512];
         FILE *lf;
@@ -551,13 +537,8 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    /*
-     * Hardware path: acquire the seat through libseat, discover KMS
-     * outputs, size the root window from the output mode, then put
-     * scanout and the cursor on the CRTC.  Any failure along the way
-     * (no seat manager, another display server holds DRM master)
-     * falls back to the headless software screen.
-     */
+         /* Hardware path: seat, outputs, root, scanout; any failure
+     * falls back to the headless software screen. */
     if (y11_session_init(&y11_g_session) == 0) {
         srv.seat_fd = y11_g_session.seat_fd;
         if (y11_drm_init(&y11_g_session) == 0) {
@@ -566,12 +547,8 @@ int main(int argc, char **argv)
             y11_screen_width = (uint16_t)out->mode.hdisplay;
             y11_screen_height = (uint16_t)out->mode.vdisplay;
             srv.drm_fd = y11_g_session.drm_card_fd;
-            /*
-             * The connector carries the EDID-derived physical size;
-             * clients use it (the connection setup's width_in_mm) to
-             * compute the real DPI.  Virtual outputs often report 0,
-             * in which case the 96 DPI fallback below fills it in.
-             */
+                         /* EDID physical size drives the client DPI; virtual
+             * outputs report 0 and fall back to 96 DPI. */
             if (out->mm_width > 0 && out->mm_width <= 0xffffu)
                 y11_screen_width_mm = (uint16_t)out->mm_width;
             if (out->mm_height > 0 && out->mm_height <= 0xffffu)
@@ -611,11 +588,8 @@ int main(int argc, char **argv)
     (void)y11_dri3_init(srv.drm_fd);
     (void)y11_present_init();
 
-    /*
-     * Hardware scanout comes up after the root window exists: it needs
-     * the root backbuffer as the composition source and DRM master
-     * from the seat.  Failing here just means the software screen.
-     */
+         /* Scanout starts after the root exists; failure means the
+     * software screen. */
     if (srv.drm_fd >= 0) {
         struct y11_window *root = y11_window_get(Y11_SCREEN_ROOT);
 

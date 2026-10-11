@@ -1,12 +1,5 @@
 /*
- * saver.c - Minimal MIT-SCREEN-SAVER extension for the Y11 display
- * server.
- *
- * QueryVersion and QueryInfo; the idle value is the time since the
- * last device event.  SelectInput and the attribute requests are
- * accepted without effect: y11 never blanks the screen.
- *
- * Wire layouts follow saverproto.h.
+ * saver.c - MIT-SCREEN-SAVER extension.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

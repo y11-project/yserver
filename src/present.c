@@ -1,18 +1,5 @@
 /*
- * present.c - Present extension for the Y11 display server:
- * VBlank-synchronized pixmap presentation.
- *
- * PresentPixmap composites a client pixmap to a window.  When the
- * window is a fullscreen direct-scanout target and the pixmap is a
- * DRI3 buffer matching the output mode, it flips the CRTC through the
- * page-flip machinery at the next vertical blank; otherwise it blits
- * through the CPU mapping.  Either way the client receives
- * PresentCompleteNotify with the achieved MSC/UST, and PresentIdle-
- * Notify when the previous buffer is reusable.
- *
- * MSC is a per-server counter advanced once per presented frame; UST
- * is the microsecond timestamp of the presentation.  PresentNotifyMSC
- * lets clients wait for a specific MSC (vsync throttling).
+ * present.c - Present extension flips and vblank.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -187,10 +174,8 @@ static int y11_present_query_version(struct y11_client *c,
 /* ---- PresentPixmap (1) ------------------------------------------------------------ */
 
 /*
- * Composite the pixmap to the window.  Fullscreen DRI3 pixmaps that
- * match an output mode try the direct page flip (VBlank locked);
- * everything else blits through CPU mappings.  The 72-byte request is
- * followed by `notifies` LISTofPRESENTNOTIFY entries (8 bytes each).
+ * PresentPixmap: fullscreen DRI3 pixmaps matching an output try the
+ * direct flip; the rest blit.  Followed by `notifies` 8-byte entries.
  */
 static int y11_present_pixmap(struct y11_client *c, const uint8_t *pkt,
                              size_t len, size_t data_off)
@@ -226,12 +211,8 @@ static int y11_present_pixmap(struct y11_client *c, const uint8_t *pkt,
         return 0;
     }
 
-    /*
-     * Fullscreen direct scanout: the window covers the root, the
-     * pixmap is a DRI3 buffer matching the output geometry, and the
-     * server holds DRM master.  On hosts without master this falls
-     * through to the blit path.
-     */
+         /* Direct scanout needs a fullscreen DRI3 pixmap and DRM
+     * master; otherwise fall through to the blit. */
     out = y11_drm_outputs();
     if (out != NULL && win->parent != NULL && win->parent->id ==
         Y11_SCREEN_ROOT &&

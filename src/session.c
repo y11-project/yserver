@@ -1,18 +1,5 @@
 /*
- * session.c - Seat session management for the Y11 display server.
- *
- * libseat authenticates with seatd or systemd-logind so an
- * unprivileged process started from a TTY session receives a usable
- * fd for the DRM card.  The enable/disable callbacks implement VT
- * switching: on switch-away the seat is acknowledged and hardware
- * scanout stops; on switch-back DRM master is re-acquired, every
- * output is re-modeset and the screen is redrawn.
- *
- * When the seat is unavailable - no seat manager, or another display
- * server already owns the session - this falls back to taking DRM
- * master directly on an idle console (the kernel allows it when no
- * other master exists); if that also fails, y11 runs headless over
- * its UNIX sockets and never disturbs a running session.
+ * session.c - Seat session via libseat with a direct fallback.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -92,12 +79,8 @@ static void y11_session_disable(struct libseat *seat, void *userdata)
     if (s->drm_card_fd >= 0 && drmIsMaster(s->drm_card_fd))
         (void)drmDropMaster(s->drm_card_fd);
 
-    /*
-     * The disable ack must go out AFTER the dispatch returns: calling
-     * back into libseat from inside its own callback nests reads on
-     * the seat connection, the ack never completes, and the seat is
-     * then unable to re-enable the client on switch-back.
-     */
+         /* The ack must leave after dispatch returns: re-entering
+     * libseat mid-callback wedges the seat connection. */
     s->pending_ack = true;
 }
 
@@ -257,13 +240,10 @@ static int y11_session_open_card(struct y11_session *s, int *dev_id)
 }
 
 /*
- * Direct fallback: no seat manager is running (no seatd socket, no
- * logind).  This path REQUIRES a controlling terminal: the tty is
- * put in VT_PROCESS mode so y11 owns VT switching - master drops on
- * switch-away and comes back on switch-back, which keeps the console
- * usable at all times.  Without a controlling terminal (daemons,
- * remote shells) the path refuses: holding the display with no way
- * to release it would trap whoever is in front of the screen.
+ * Direct fallback without a seat manager: needs a controlling tty in
+ * VT_PROCESS mode to own VT switching.  Daemons and remote shells are
+ * refused - holding the display with no way to release it traps the
+ * user at the console.
  */
 static int y11_session_direct(struct y11_session *s)
 {
@@ -348,12 +328,8 @@ int y11_session_init(struct y11_session *s)
     s->drm_device_id = -1;
     s->tty_fd = open("/dev/tty", O_RDWR);
 
-    /*
-     * A display needs VT coordination: without a controlling terminal
-     * (daemons, remote shells) there is no way to hand the screen
-     * back on a VT switch, which would trap whoever sits in front of
-     * it.  Refuse instead.
-     */
+         /* No controlling terminal means no way to hand the screen back
+     * on a VT switch.  Refuse. */
     if (s->tty_fd < 0) {
         s->seat = libseat_open_seat(&y11_seat_listener, s);
         if (s->seat != NULL) {
@@ -365,12 +341,8 @@ int y11_session_init(struct y11_session *s)
         return -1;
     }
 
-    /*
-     * Activate the controlling VT BEFORE the seat binds: the seat
-     * session is assigned for the VT that is active right now, and it
-     * has to be the tty y11 owns or the seat immediately disables the
-     * session again (active VT elsewhere) and the display never takes.
-     */
+         /* The seat binds to the VT active right now, so activate the
+     * own tty first or the session disables immediately. */
     vt = y11_get_vt_num(s->tty_fd);
     if (vt > 0) {
         (void)ioctl(s->tty_fd, VT_ACTIVATE, vt);

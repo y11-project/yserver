@@ -1,17 +1,5 @@
 /*
- * xkb.c - Minimal XKEYBOARD (XKB) extension: the request set
- * libxkbcommon-x11 and libX11's XKB parser need (UseExtension,
- * GetState, GetMap, GetNames, GetControls, GetIndicatorMap,
- * GetDeviceInfo) to build a keymap from y11's core
- * keycode/keysym/modifier tables.  Wire layouts follow XKBproto.h
- * and xcb's xkb.h byte for byte.
- *
- * Parser requirements (all verified byte-level): GetMap must report
- * every required component bit (0xdf) with 0-based entry levels;
- * GetMap/GetNames virtualMods, GetNames indicators/groupNames and
- * GetIndicatorMap which must be nonzero (msb_pos(0) is undefined);
- * GetNames nTypes must match GetMap and cover the whole keycode
- * range; GetControls needs numGroups > 0 and the full 92-byte reply.
+ * xkb.c - XKEYBOARD extension.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

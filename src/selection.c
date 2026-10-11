@@ -1,17 +1,5 @@
 /*
- * selection.c - Selection ownership and clipboard transfer for the
- * Y11 display server.
- *
- * SetSelectionOwner records who owns each selection atom (PRIMARY,
- * CLIPBOARD, ...), notifying the previous owner with SelectionClear.
- * ConvertSelection forwards a request to the owner as a
- * SelectionRequest event; the owner answers by sending a
- * SelectionNotify event to the requestor through SendEvent.  When no
- * owner exists the server answers the requestor itself with an empty
- * SelectionNotify, exactly like a full X server.
- *
- * All three selection events are addressed, not masked: they go to
- * the specific client that owns the selection or made the request.
+ * selection.c - Selection ownership and conversion.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -176,11 +164,8 @@ int y11_selection_req_get_owner(struct y11_client *c, const uint8_t *pkt,
     return 0;
 }
 
-/*
- * ConvertSelection (opcode 24): forward the request to the selection
- * owner as SelectionRequest; with no owner, answer the requestor
- * directly with an empty SelectionNotify (property None).
- */
+/* ConvertSelection (24): forward to the owner, or answer the
+ * requestor with an empty SelectionNotify. */
 int y11_selection_req_convert(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off)
 {

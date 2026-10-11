@@ -1,16 +1,5 @@
 /*
- * xrender.c - RENDER extension for the Y11 display server.
- *
- * Pictures wrap drawables with a pixel format; glyph sets hold A8
- * alpha masks uploaded by the client (Xft rasterizes glyphs through
- * freetype on the client side and ships the bitmaps here with
- * AddGlyphs).  CompositeGlyphs blends the glyph masks into the
- * destination picture's drawable with the source picture's color,
- * and FillRectangles blends solid colors - both straight into the
- * 32-bit framebuffer the core rasterizer already maintains.
- *
- * Supported ops: Clear (0), Src (1) and Over (3), the ones text
- * rendering and icon compositing actually use.
+ * xrender.c - RENDER compositing and glyph text.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

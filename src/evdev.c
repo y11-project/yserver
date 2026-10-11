@@ -1,9 +1,5 @@
 /*
- * evdev.c - Linux/FreeBSD evdev input device ingestion for Y11.
- *
- * Scans /dev/input/event* devices and polls them in the main server loop.
- * Translates evdev key codes, buttons, relative pointer motions and
- * absolute tablet/mouse events into the y11_input_* subsystem.
+ * evdev.c - Input device ingestion.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -345,13 +341,8 @@ void y11_evdev_handle(struct y11_session *s, int fd)
         for (i = 0; i < count; i++) {
             struct input_event *ev = &evs[i];
 
-            /*
-             * When a real seat session exists (a VT to switch away
-             * from), inactive means switched away: drop the events.
-             * Without a session (headless over the socket, e.g.
-             * test.sh from inside a compositor's terminal) there is
-             * nothing to switch away from: process everything.
-             */
+                         /* With a session, inactive means switched away: drop
+             * events.  Headless has nothing to switch from. */
             if (s != NULL && s->seat_fd >= 0 && !s->active)
                 continue;
 

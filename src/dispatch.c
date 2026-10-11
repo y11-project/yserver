@@ -1,16 +1,5 @@
 /*
- * dispatch.c - Opcode dispatcher, sequence tracking and reply encoding
- * for the Y11 display server.
- *
- * Strict sequence rule: every incoming request packet increments the
- * client's sequence number, and every reply or error packet carries that
- * number (low 16 bits) in bytes 2-3.
- *
- * BIG-REQUESTS: the extension is advertised through QueryExtension and
- * enabled by its 4-byte Enable request (minor opcode 0).  Once enabled,
- * a request whose 16-bit length field is 0 carries its true 4-byte-unit
- * length in the following 32-bit word (an 8-byte extended header whose
- * length includes the header itself).
+ * dispatch.c - Opcode dispatch and server replies.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -96,11 +85,7 @@ int y11_dispatch_bad_length(struct y11_client *c, uint8_t opcode)
     return 0;
 }
 
-/*
- * QueryPointer (38): reply with the live pointer position, pressed
- * buttons, modifiers, and the child of the queried window under the
- * cursor.
- */
+/* QueryPointer (38): live position, buttons, modifiers, child. */
 static int y11_dispatch_query_pointer(struct y11_client *c, const uint8_t *pkt,
                                       size_t len, size_t data_off)
 {
@@ -195,12 +180,9 @@ static int y11_dispatch_translate_coords(struct y11_client *c,
 }
 
 /*
- * SendEvent (opcode 25): deliver a client-crafted 32-byte event.
- * Destination 0 is the window under the pointer, 1 the input focus;
- * when propagation is set and no client selected the mask on the
- * destination, the event walks up the parent chain with the event
- * window rewritten at each step.  The send-event flag (byte 0 bit 7)
- * marks the packet on the wire.
+ * SendEvent (25): deliver a client-crafted event.  Destination 0 is
+ * the pointer window, 1 the focus; propagation rewrites the event
+ * window walking up.  The send-event flag is byte 0 bit 7.
  */
 static int y11_dispatch_send_event(struct y11_client *c, const uint8_t *pkt,
                                    size_t len, size_t data_off)
@@ -260,11 +242,7 @@ static int y11_dispatch_send_event(struct y11_client *c, const uint8_t *pkt,
     return 0;                   /* no reply */
 }
 
-/*
- * GetModifierMapping (opcode 119): report two keycodes per modifier in
- * the standard order Shift, Lock, Control, Mod1..Mod5, drawn from the
- * evdev keycodes input.c uses for its modifier state.
- */
+/* GetModifierMapping (119): two keycodes per modifier, evdev order. */
 static int y11_dispatch_get_modifier_mapping(struct y11_client *c,
                                               const uint8_t *pkt, size_t len,
                                               size_t data_off)
@@ -360,11 +338,8 @@ static int y11_dispatch_list_extensions(struct y11_client *c)
 
 /* ---- individual request handlers ------------------------------------------- */
 
-/*
- * QueryExtension: report BIG-REQUESTS as present with the major opcode
- * y11 assigned to it.  Everything else is reported absent.  The reply is
- * exactly 32 bytes with length 0 and no name echo, matching the X server.
- */
+/* QueryExtension: BIG-REQUESTS present with its opcode, all else
+ * absent; 32-byte reply, length 0, no name echo. */
 static int y11_dispatch_query_extension(struct y11_client *c,
                                         const uint8_t *pkt, size_t len,
                                         size_t data_off)
@@ -418,15 +393,9 @@ static int y11_dispatch_query_extension(struct y11_client *c,
         rep.present = 1;
         rep.major_opcode = (uint8_t)Y11_XFIXES_EXT_OPCODE;
     }
-    /*
-     * GLX stays unadvertised.  GDK probes it at display open and hands
-     * the connection to threaded GL stacks, whose worker threads race
-     * Xlib on connections that are not XInitThreads-safe; the first
-     * GTK client reliably wedges its event queue that way (events are
-     * read off the socket but never dispatched, so the window never
-     * takes input).  EGL does not use GLX, so direct-rendering clients
-     * that go through EGL keep working.
-     */
+         /* GLX stays unadvertised: GDK hands the connection to threaded
+     * GL stacks that race non-XInitThreads Xlib and wedge the first
+     * GTK client's event queue.  EGL bypasses GLX and keeps working. */
     if (name_len == (uint16_t)(sizeof(Y11_GLX_NAME) - 1) &&
         memcmp(name, Y11_GLX_NAME, name_len) == 0) {
         rep.present = 0;
@@ -549,12 +518,8 @@ static int y11_dispatch_get_screen_saver(struct y11_client *c)
     return 0;
 }
 
-/*
- * Color requests: resolve colors through the X11 color-name grammar
- * (#RGB/#RRGGBB/... hex forms plus a small table of common names) and
- * pack pixels through the screen's TrueColor visual (red 0xFF0000,
- * green 0xFF00, blue 0xFF).
- */
+/* Color requests: X11 color-name grammar (hex plus common names),
+ * packed through the TrueColor visual. */
 
 /* Scale an n-hex-digit component to the full 16-bit range. */
 static uint16_t y11_color_scale(uint32_t v, unsigned digits)
@@ -669,11 +634,7 @@ static uint32_t y11_color_pixel(uint16_t red, uint16_t green, uint16_t blue)
 
 /* ---- colormap lifecycle ------------------------------------------------------ */
 
-/*
- * TrueColor visuals carry their color maps in the pixel value, so a
- * colormap needs no palette storage: it is a registered XID that
- * CreateWindow can reference and clients can allocate colors from.
- */
+/* Colormaps carry no palette: TrueColor packs RGB in the pixel. */
 
 static int y11_dispatch_create_colormap(struct y11_client *c,
                                         const uint8_t *pkt, size_t len,
@@ -786,13 +747,9 @@ void y11_colormap_purge_client(struct y11_client *c)
 /* ---- fonts and cursors ------------------------------------------------------- */
 
 /*
- * Fonts are server-side stubs: y11 draws no text (the core text
- * requests are accepted as no-ops), so an OpenFont just registers an
- * XID and QueryFont reports an empty character cell that covers every
- * glyph index.  That is enough for Xlib's XCreateFontCursor, which
- * validates the requested shape against min/max char range before
- * asking for a glyph cursor - the shape number is what my hardware
- * cursor path keys on.
+ * Fonts are stubs: OpenFont registers an XID, QueryFont reports an
+ * empty cell covering 0..255 so XCreateFontCursor's shape range
+ * check passes; the shape number keys the hardware cursor path.
  */
 
 /* OpenFont (45): fid, name length, name. */
@@ -841,11 +798,7 @@ static int y11_dispatch_close_font(struct y11_client *c,
     return 0;                   /* no reply */
 }
 
-/*
- * QueryFont (47): 60-byte fixed reply followed by per-character
- * metrics; the stub reports zero characters with a full 0..255 range
- * so every cursor-font glyph index validates on the client side.
- */
+/* QueryFont (47): 60-byte reply, zero chars, range 0..255. */
 static int y11_dispatch_query_font(struct y11_client *c,
                                   const uint8_t *pkt, size_t len,
                                   size_t data_off)
@@ -878,11 +831,7 @@ static int y11_dispatch_query_font(struct y11_client *c,
     return 0;
 }
 
-/*
- * CreateGlyphCursor (94): register the cursor XID and remember the
- * cursor-font glyph the client picked; the number matches the
- * standard cursor font shape table (XC_left_ptr, XC_xterm, ...).
- */
+/* CreateGlyphCursor (94): the shape number keys the cursor path. */
 static int y11_dispatch_create_glyph_cursor(struct y11_client *c,
                                             const uint8_t *pkt, size_t len,
                                             size_t data_off)
@@ -903,11 +852,7 @@ static int y11_dispatch_create_glyph_cursor(struct y11_client *c,
         y11_dispatch_send_error(c, Y11_ERR_BAD_FONT, source_font, pkt[0]);
         return 0;
     }
-    /*
-     * Glyph cursors have no rasterized image in y11; register a stub
-     * so DefineCursor/FreeCursor bookkeeping works and resolving
-     * falls back to the built-in arrow.
-     */
+         /* No rasterized image: stub, resolves to the built-in arrow. */
     if (y11_cursor_create(cid, c, 0, 0, 0, 0, NULL, 0) != 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
         return 0;
@@ -939,11 +884,7 @@ static int y11_dispatch_create_cursor(struct y11_client *c,
         y11_dispatch_send_error(c, Y11_ERR_BAD_PIXMAP, mask, pkt[0]);
         return 0;
     }
-    /*
-     * Core pixmap cursors have no rasterized image in y11; register a
-     * stub so DefineCursor/FreeCursor bookkeeping works and resolving
-     * falls back to the built-in arrow.
-     */
+         /* No rasterized image: stub, resolves to the built-in arrow. */
     if (y11_cursor_create(cid, c, 0, 0, 0, 0, NULL, 0) != 0) {
         y11_dispatch_send_error(c, Y11_ERR_BAD_ID_CHOICE, cid, pkt[0]);
         return 0;
@@ -1052,11 +993,8 @@ static const char *y11_xfixes_get_cursor_name(uint32_t cursor)
 }
 
 /*
- * KillClient (113): disconnect the client that owns the resource.
- * The _XSETROOT_ID protocol (feh, xsetroot) kills the previous
- * background-setter through its window id; resource 0
- * (AllTemporary) disconnects every other client whose close-down
- * mode is DestroyAll.
+ * KillClient (113): 0 (AllTemporary) kills every DestroyAll client;
+ * otherwise the resource's owner goes.  _XSETROOT_ID uses this.
  */
 static int y11_dispatch_kill_client(struct y11_client *c,
                                     const uint8_t *pkt, size_t len,
@@ -1160,10 +1098,8 @@ static int y11_dispatch_alloc_named_color(struct y11_client *c,
 }
 
 /*
- * QueryColors (91): 8-byte fixed part (colormap), then one CARD32
- * pixel per unit of request length; there is no explicit count field.
- * The reply is followed by one 8-byte RGB item (red, green, blue,
- * pad) per pixel, all zero: Xlib reads exactly npixels * 8 bytes.
+ * QueryColors (91): one CARD32 pixel per length unit (no count
+ * field); reply carries one 8-byte zero RGB item per pixel.
  */
 static int y11_dispatch_query_colors(struct y11_client *c, const uint8_t *pkt,
                                      size_t len, size_t data_off)
@@ -1231,12 +1167,7 @@ static int y11_dispatch_lookup_color(struct y11_client *c, const uint8_t *pkt,
     return 0;
 }
 
-/*
- * Resource lifecycle requests (CreateGC, ChangeGC, FreeGC, CreatePixmap,
- * FreePixmap, ChangeWindowAttributes): y11 renders nothing in phase 1,
- * so these are consumed without a reply; the resource ids they carry are
- * simply accepted.
- */
+/* Resource lifecycle requests: consumed without a reply. */
 static int y11_dispatch_accept_resource(struct y11_client *c,
                                         const uint8_t *pkt, size_t len,
                                         size_t data_off)
@@ -1328,11 +1259,7 @@ static int y11_dispatch_xtest(struct y11_client *c, const uint8_t *pkt,
 
 /* ---- the dispatcher --------------------------------------------------------- */
 
-/*
- * Dispatch one complete request packet.  pkt points at the first byte of
- * the packet and len is its full size in bytes (a multiple of 4).
- * Returns 0 on success, -1 on a fatal error.
- */
+/* Dispatch one complete packet; -1 is fatal (closes the client). */
 int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
 {
     uint8_t opcode = pkt[0];

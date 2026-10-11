@@ -1,10 +1,5 @@
 /*
- * pixmap.c - Off-screen pixel storage for the Y11 display server.
- *
- * Pixmaps are linear 32-bit XRGB buffers owned by one client and
- * registered in the global XID resource table.  Depth 1 pixmaps are
- * stored in the same 32-bit rows (pixels 0 and 1); the depth only
- * matters at the wire boundary, where render.c converts formats.
+ * pixmap.c - Off-screen pixel storage.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause

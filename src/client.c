@@ -1,8 +1,5 @@
 /*
- * client.c - Client connection management for the Y11 display server.
- *
- * Handles client allocation, the per-client request reassembly ("ring")
- * buffer, and the X11 connection setup handshake.
+ * client.c - Client connections and request reassembly.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -153,10 +150,8 @@ static int y11_client_grow_inbuf(struct y11_client *c)
 }
 
 /*
- * Read everything currently available from the socket into the client's
- * reassembly buffer, harvesting any ancillary file descriptors passed
- * with SCM_RIGHTS.  Returns 0 on success (including clean EOF, which
- * marks the client dead), -1 on a fatal read error.
+ * Read all socket input into the reassembly buffer, harvesting
+ * SCM_RIGHTS fds.  0 on success (EOF marks the client dead), -1 fatal.
  */
 int y11_client_read(struct y11_client *c)
 {
@@ -219,12 +214,7 @@ int y11_client_read(struct y11_client *c)
     }
 }
 
-/*
- * Queue bytes for transmission, optionally carrying one ancillary file
- * descriptor (SCM_RIGHTS) attached at the start of this chunk.  The
- * event loop flushes pending output after each parse pass; POLLOUT
- * resumes when the client catches up.
- */
+/* Queue output, optionally attaching one SCM_RIGHTS fd at chunk start. */
 int y11_client_send_fd(struct y11_client *c, const void *data, size_t len,
                        int fd)
 {
@@ -245,12 +235,7 @@ int y11_client_send_fd(struct y11_client *c, const void *data, size_t len,
     return y11_client_send(c, data, len);
 }
 
-/*
- * Write all pending output, attaching the queued file descriptor with
- * sendmsg when the reply it belongs to goes out.  Returns 1 when fully
- * flushed, 0 when the client is not ready to accept more (POLLOUT will
- * resume), -1 on error.
- */
+/* Flush pending output; the queued fd rides the sendmsg it belongs to. */
 int y11_client_flush(struct y11_client *c)
 {
     while (c->out_len > 0) {
@@ -560,11 +545,8 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
         return 0;               /* wait for the authorization data */
 
 #ifdef Y11_DUAL_VERIFY
-    /*
-     * Shadow probe: the C path only admits little-endian protocol 11,
-     * so the Rust parser must agree on every header field it read,
-     * including the padded authorization byte count.
-     */
+         /* Shadow probe: LE protocol 11 only, so Rust must agree field
+     * by field, including the padded authorization byte count. */
     {
         struct y11_handshake_req dv_hs;
         y11_safe_status dv_st = y11_handshake_parse_header(
@@ -596,11 +578,7 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
 
 /* ---- request stream parsing ------------------------------------------------- */
 
-/*
- * Parse every complete request packet buffered at *off and hand it to the
- * dispatcher.  Each packet increments the client's sequence number.
- * Returns 0 on success, -1 on a fatal error.
- */
+/* Dispatch every complete packet at *off, one sequence number each. */
 static int y11_client_requests(struct y11_client *c, size_t *off)
 {
     while (c->in_len - *off >= sizeof(y11_req)) {
@@ -610,15 +588,10 @@ static int y11_client_requests(struct y11_client *c, size_t *off)
         int rc;
 
 #ifdef Y11_DUAL_VERIFY
-        /*
-         * Shadow probe: the Rust framer decides independently on the
-         * same buffered bytes, and each C decision point below asserts
-         * its outcome.  Divergence aborts the server, so live traffic
-         * proves the two framers equivalent.  The one tolerated
-         * disagreement: length16 == 0 without the extension is a
-         * framing violation per the validator, while the C side
-         * leniently reads it as a bare 4-byte request.
-         */
+                 /* Shadow probe: Rust frames the same bytes independently;
+         * divergence aborts.  One tolerated disagreement: length16 == 0
+         * without the extension is a validator violation, leniently read
+         * as a 4-byte request here. */
         struct y11_request_frame dv_frame;
         y11_safe_status dv_st = y11_frame_request(
             pkt, c->in_len - *off,
@@ -697,11 +670,7 @@ static int y11_client_requests(struct y11_client *c, size_t *off)
     return 0;
 }
 
-/*
- * Advance the client's protocol state machine over its buffered input:
- * the connection setup handshake first, then the request stream.
- * Returns 0 on success, -1 on a fatal error.
- */
+/* Advance the protocol state machine: handshake, then request stream. */
 int y11_client_process(struct y11_client *c)
 {
     size_t off = 0;

@@ -1,17 +1,5 @@
 /*
- * input.c - Pointer and keyboard state, device event routing and the
- * single ingestion point for input events in the Y11 display server.
- *
- * Hardware backends (libinput over libseat) feed the y11_input_*
- * functions; on hosts without the input stack the same entry points
- * are driven by the XTEST extension's FakeInput request, which is how
- * tools like xdotool inject keystrokes and pointer motion.
- *
- * Routing follows the X11 model: an active grab takes strict priority,
- * passive grabs activate implicitly on matching button/key presses, and
- * otherwise events walk up the window hierarchy from the window under
- * the cursor (pointer) or the focus window (keyboard) until a client
- * has selected the right event mask.
+ * input.c - Pointer and keyboard state, grabs and key events.
  *
  * Copyright (c) 2026 The Y11 Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -194,11 +182,8 @@ void y11_input_shutdown(void)
 
 /* ---- event crafting helpers ---------------------------------------------------- */
 
-/*
- * Fill a key/button/motion event: coordinates relative to the event
- * window's interior origin, child = the immediate child of the event
- * window on the path toward the hit window (None at the hit itself).
- */
+/* Fill a device event: coordinates relative to the event window's
+ * interior origin; child points toward the hit window. */
 static void y11_input_fill_device(y11_key_button_event *ev, uint8_t type,
                                   uint8_t detail,
                                   const struct y11_window *event_win,
@@ -519,12 +504,8 @@ uint16_t y11_input_modifier_mask_for(uint8_t keycode)
 
 /* ---- key autorepeat -------------------------------------------------------------------- */
 
-/*
- * Server-side autorepeat: clients get press/release pairs while a
- * non-modifier key is held, matching the repeat delay and interval the
- * XKB GetControls reply advertises.  The kernel's VT-layer repeat does
- * not reach the evdev stream while the session owns the devices.
- */
+/* Autorepeat press/release pairs while held, matching the delay and
+ * rate GetControls advertises; kernel VT repeat never reaches evdev. */
 #define Y11_REPEAT_DELAY_MS 660
 #define Y11_REPEAT_RATE_MS  40
 
@@ -685,13 +666,10 @@ void y11_input_key(int press, uint8_t keycode)
 /* ---- focus events ---------------------------------------------------------------------- */
 
 /*
- * Focus event detail for a focus move from `from` to `to`, per the
- * relationship of the two windows: moving down the tree reports
- * NotifyInferior to the loser and NotifyAncestor to the winner, moving up
- * the reverse, and unrelated windows NotifyNonlinear on both sides.  GTK
- * treats a NotifyInferior FocusOut as "focus stays within this toplevel",
- * which is what keeps input alive when a toplevel moves the X focus to
- * its hidden input-only focus window (EWMH _NET_WM_USER_TIME_WINDOW).
+ * Focus detail by window relationship: down = NotifyInferior loser /
+ * NotifyAncestor winner, up the reverse, unrelated NotifyNonlinear.
+ * GTK ignores a NotifyInferior FocusOut, which keeps input alive
+ * when a toplevel moves the X focus to its hidden focus window.
  */
 static void y11_focus_details(const struct y11_window *from,
                               const struct y11_window *to,
