@@ -617,7 +617,7 @@ void y11_input_key(int press, uint8_t keycode)
     }
 
     if (press) {
-        if (y11_input_modifier_mask_for(keycode) == 0 && !y11_key_repeat.active)
+        if (y11_input_modifier_mask_for(keycode) == 0)
             y11_key_repeat_arm(keycode);
     } else if (y11_key_repeat.active && y11_key_repeat.keycode == keycode) {
         y11_key_repeat.active = 0;
