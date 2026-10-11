@@ -70,6 +70,10 @@ y11_safe_status y11_validate_property_payload(uint8_t format,
 y11_safe_status y11_validate_value_mask(uint32_t value_mask,
                                         size_t payload_len);
 
+/* Total request bytes the core protocol requires per opcode; 4 for
+ * extensions and unlisted opcodes. */
+uint16_t y11_opcode_min_len(uint8_t opcode);
+
 /*
  * Format a canonical 32-byte X11 wire error frame into out_buf
  * (out_len must be at least 32): byte 0 reads 0, byte 1 carries

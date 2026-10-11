@@ -12,7 +12,7 @@
 
 int main(void)
 {
-    static const uint8_t req4[4] = {0x2a, 0x00, 0x01, 0x00}; /* len=1 */
+    static const uint8_t req4[4] = {0x81, 0x00, 0x01, 0x00}; /* ext, len=1 */
     static const uint8_t hs12[12] = {'l', 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     struct y11_request_frame fr;
     struct y11_handshake_req hs;
@@ -22,7 +22,7 @@ int main(void)
     st = y11_frame_request(req4, sizeof(req4), 0, &fr);
     if (st != Y11_SAFE_OK)
         return 1;
-    if (fr.opcode != 0x2a || fr.wire_len != 1 || fr.true_len != 4)
+    if (fr.opcode != 0x81 || fr.wire_len != 1 || fr.true_len != 4)
         return 2;
 
     /* a truncated header reports insufficient data, not a crash */

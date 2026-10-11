@@ -171,12 +171,14 @@ static int test_framing(void)
         EXPECT(st == Y11_SAFE_LENGTH_OVERFLOW);
     }
 
-    /* a trailing request must not leak into the first frame */
+    /* a trailing request must not leak into the first frame
+     * (opcode 42's table minimum is 12 bytes) */
     {
-        uint8_t buf[12] = {42, 0, 2, 0, 0, 0, 0, 0, 7, 0, 1, 0};
+        uint8_t buf[16] = {42, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           7, 0, 1, 0};
         st = y11_frame_request(buf, sizeof(buf), 0, &fr);
         EXPECT(st == Y11_SAFE_OK);
-        EXPECT(fr.true_len == 8); /* first request only */
+        EXPECT(fr.true_len == 12); /* first request only */
     }
     return 0;
 }
