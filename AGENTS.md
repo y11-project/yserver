@@ -105,6 +105,11 @@ server itself:
   configs attribute by attribute; the advertised entry must mirror
   what a modern driver reports (no accumulation buffers, bind-to-
   texture on, Y inverted) or every config is dropped as unmatched.
+- GLX must not appear in QueryExtension replies: GDK probes it at
+  display open and hands the connection to threaded GL stacks, whose
+  workers race Xlib on non-XInitThreads connections; the first GTK
+  client reliably wedges its event queue (events are read but never
+  dispatched).  EGL clients are unaffected — they bypass GLX.
 - libXrender requires the connection setup to advertise depths
   1/4/8/24/32 before it will even send QueryExtension("RENDER"); it
   probes missing depths with 1x1 pixmaps and reads the errors.
