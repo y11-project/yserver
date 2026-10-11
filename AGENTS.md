@@ -110,6 +110,10 @@ server itself:
   workers race Xlib on non-XInitThreads connections; the first GTK
   client reliably wedges its event queue (events are read but never
   dispatched).  EGL clients are unaffected — they bypass GLX.
+- XKB StateNotify must reach clients that select it: launchers resolve
+  the modifier state once at startup (while the hotkey that spawned
+  them is still held) and depend on the event to learn the release;
+  without it every no-modifier binding (BackSpace, Escape) dies.
 - libXrender requires the connection setup to advertise depths
   1/4/8/24/32 before it will even send QueryExtension("RENDER"); it
   probes missing depths with 1x1 pixmaps and reads the errors.
