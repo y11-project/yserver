@@ -937,6 +937,8 @@ void y11_input_repeat_fire(void);
 /* Minimal XKEYBOARD extension (XKB) request dispatcher. */
 int  y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
                  size_t data_off);
+void y11_xkb_purge_client(struct y11_client *c);
+void y11_xkb_notify_state(uint8_t keycode);
 int  y11_input_req_set_input_focus(struct y11_client *c, const uint8_t *pkt,
                                     size_t len, size_t data_off);
 int  y11_input_req_get_keyboard_mapping(struct y11_client *c,

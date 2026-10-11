@@ -488,6 +488,7 @@ void y11_input_button(int press, uint8_t button)
 static void y11_input_update_modifiers(uint8_t keycode, int press)
 {
     size_t i;
+    uint16_t before = y11_keyboard_state.modifier_mask;
 
     for (i = 0; i < sizeof(y11_modifier_keys) / sizeof(y11_modifier_keys[0]);
          i++) {
@@ -499,6 +500,8 @@ static void y11_input_update_modifiers(uint8_t keycode, int press)
             y11_keyboard_state.modifier_mask &=
                 (uint16_t)~y11_modifier_keys[i].mask;
     }
+    if (y11_keyboard_state.modifier_mask != before)
+        y11_xkb_notify_state(keycode);
 }
 
 /* Modifier mask a keycode produces (0 when not a modifier key). */

@@ -40,6 +40,17 @@
 #define Y11_XKB_REQ_GET_NAMES         17u
 #define Y11_XKB_REQ_GET_DEVICE_INFO   24u
 
+/* XkbStateNotifyMask: the only XKB event class y11 emits. */
+#define Y11_XKB_STATE_NOTIFY_MASK     0x0004u
+
+/* Clients that follow XKB events, with the classes they selected. */
+struct y11_xkb_watch {
+    struct y11_client *client;
+    uint16_t selected;
+    struct y11_xkb_watch *next;
+};
+static struct y11_xkb_watch *y11_xkb_watches;
+
 /* GetMap reply "present" bits (XCB_XKB_MAP_PART_*). */
 #define Y11_XKB_MAP_KEY_TYPES        0x0001u
 #define Y11_XKB_MAP_KEY_SYMS         0x0002u
@@ -414,6 +425,93 @@ static int y11_xkb_get_device_info(struct y11_client *c)
     return 0;
 }
 
+/* SelectEvents (minor 1): track which clients follow StateNotify.
+ * The class is chosen either through selectAll or, when the client
+ * narrows it, through the first detail pair's select word (bytes
+ * 18-19 of the request; that pair belongs to StateNotify because it
+ * is the lowest class bit carrying details). */
+static void y11_xkb_select_events(struct y11_client *c, const uint8_t *pkt,
+                                  size_t len)
+{
+    struct y11_xkb_watch *w;
+    uint16_t affect = y11_wire_get16(pkt + 6);
+    uint16_t clear = y11_wire_get16(pkt + 8);
+    uint16_t select_all = y11_wire_get16(pkt + 10);
+    uint16_t selected;
+
+    selected = affect & (uint16_t)~clear & select_all;
+    if ((affect & Y11_XKB_STATE_NOTIFY_MASK) != 0 &&
+        (select_all & Y11_XKB_STATE_NOTIFY_MASK) == 0 && len >= 20u &&
+        y11_wire_get16(pkt + 18) != 0)
+        selected |= Y11_XKB_STATE_NOTIFY_MASK;
+
+    for (w = y11_xkb_watches; w != NULL; w = w->next) {
+        if (w->client == c) {
+            w->selected = selected;
+            return;
+        }
+    }
+    w = malloc(sizeof(*w));
+    if (w == NULL)
+        return;
+    w->client = c;
+    w->selected = selected;
+    w->next = y11_xkb_watches;
+    y11_xkb_watches = w;
+}
+
+/* Drop a disconnecting client's event selections. */
+void y11_xkb_purge_client(struct y11_client *c)
+{
+    struct y11_xkb_watch **link = &y11_xkb_watches;
+
+    while (*link != NULL) {
+        if ((*link)->client == c) {
+            struct y11_xkb_watch *dead = *link;
+
+            *link = dead->next;
+            free(dead);
+            return;
+        }
+        link = &(*link)->next;
+    }
+}
+
+/*
+ * StateNotify (event base + xkbType 2): the effective modifier state
+ * changed.  Clients resolve modifier state once (rofi via
+ * xkb_x11_state_new_from_device, which snapshots the current keys)
+ * and then rely on this event to track releases; without it a client
+ * launched from a hotkey (Mod4+d) keeps the launcher modifier stuck
+ * and drops every no-modifier binding such as BackSpace or Escape.
+ */
+void y11_xkb_notify_state(uint8_t keycode)
+{
+    struct y11_xkb_watch *w;
+    uint8_t ev[32];
+    uint8_t mods = (uint8_t)(y11_input_keyboard()->modifier_mask & 0xFFu);
+
+    for (w = y11_xkb_watches; w != NULL; w = w->next) {
+        if ((w->selected & Y11_XKB_STATE_NOTIFY_MASK) == 0)
+            continue;
+        memset(ev, 0, sizeof(ev));
+        ev[0] = (uint8_t)Y11_XKB_FIRST_EVENT;
+        ev[1] = 2;                  /* xkbType: StateNotify */
+        y11_wire_put32(ev + 4, y11_input_event_time());
+        ev[8] = 1;                  /* deviceID: the core keyboard */
+        ev[9] = mods;               /* mods: effective */
+        ev[10] = mods;              /* baseMods: keys held */
+        ev[19] = mods;              /* compatState */
+        ev[20] = mods;              /* grabMods */
+        ev[21] = mods;              /* compatGrabMods */
+        ev[22] = mods;              /* lookupMods */
+        ev[23] = mods;              /* compatLookupMods */
+        y11_wire_put16(ev + 26, 0x0003);  /* changed: mods + baseMods */
+        ev[28] = keycode;           /* the key that changed the state */
+        y11_event_dispatch32(w->client, ev, sizeof(ev));
+    }
+}
+
 /*
  * XKB request dispatcher.  The minor opcode rides in body byte 1 of
  * every XKB request.
@@ -429,6 +527,8 @@ int y11_xkb_req(struct y11_client *c, const uint8_t *pkt, size_t len,
     case Y11_XKB_REQ_USE_EXTENSION:
         return y11_xkb_use_extension(c);
     case Y11_XKB_REQ_SELECT_EVENTS:
+        y11_xkb_select_events(c, pkt, len);
+        return 0;               /* request-only: the server sends no reply */
     case Y11_XKB_REQ_BELL:
     case Y11_XKB_REQ_LATCH_LOCK_STATE:
     case Y11_XKB_REQ_SET_CONTROLS:

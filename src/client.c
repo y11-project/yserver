@@ -98,6 +98,8 @@ void y11_client_destroy(struct y11_server *srv, struct y11_client *c)
     /* And its GLX contexts and input grabs. */
     y11_glx_purge_client(c);
     y11_grab_purge_client(c);
+    /* And its XKB event selections. */
+    y11_xkb_purge_client(c);
     /* And its DRI3 shared-memory fences. */
     y11_dri3_fence_purge_client(c);
     /* And its RENDER pictures and glyph sets. */
