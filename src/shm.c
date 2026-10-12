@@ -15,10 +15,11 @@
 
 #include "y11.h"
 #include "wire.h"
-#ifdef Y11_DUAL_VERIFY
-#include <assert.h>
 
 #include "safe.h"
+
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
 #endif
 
 /* Sub-opcodes (shmproto.h). */
@@ -195,7 +196,7 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
     struct y11_shm_seg *seg;
     struct y11_gc *gc;
     y11_drawable_t *d;
-    uint64_t stride, need;
+    uint64_t stride;
     uint8_t *src;
     int32_t row;
 
@@ -255,40 +256,39 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
     /* A read-only mapping is fine here: the server only reads the
      * client's pixels. */
 
-    /* Bounds check: the last blitted byte must be inside the segment. */
-    if (depth == 1) {
+    /* Row stride the blit reads below; the extent check itself is
+     * the validator's. */
+    if (depth == 1)
         stride = ((uint64_t)total_width + 31u) / 32u * 4u;
-        need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
-               ((uint64_t)(src_x + src_width + 7u) / 8u);
-    } else {
+    else
         stride = (uint64_t)total_width * 4u;
-        need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
-               (uint64_t)(src_x + src_width) * 4u;
-    }
-#ifdef Y11_DUAL_VERIFY
     {
         y11_safe_status st = y11_shm_bounds(total_width, src_x, src_y,
                                             src_width, src_height, depth,
                                             offset, seg->size);
-        int c_fail = (src_x + src_width > total_width ||
-                      (stride > 0 &&
-                       (uint64_t)(src_y + src_height) > seg->size / stride) ||
-                      need > (uint64_t)seg->size);
 
-        assert((st != Y11_SAFE_OK) == c_fail);
-        if (st == Y11_SAFE_LENGTH_OVERFLOW || c_fail) {
+#ifdef Y11_DUAL_VERIFY
+        /* Retired C bound math, kept as the CI cross-check. */
+        {
+            uint64_t dv_need = offset +
+                (uint64_t)(src_y + src_height - 1u) * stride +
+                (depth == 1
+                     ? ((uint64_t)(src_x + src_width + 7u) / 8u)
+                     : (uint64_t)(src_x + src_width) * 4u);
+            int c_fail = (src_x + src_width > total_width ||
+                          (stride > 0 &&
+                           (uint64_t)(src_y + src_height) >
+                               seg->size / stride) ||
+                          dv_need > (uint64_t)seg->size);
+
+            assert((st != Y11_SAFE_OK) == c_fail);
+        }
+#endif
+        if (st != Y11_SAFE_OK) {
             y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR,
                                     shmseg_id, pkt[0]);  /* BadShmSeg */
             return 0;
         }
-    }
-#endif
-    if (src_x + src_width > total_width ||
-        (stride > 0 && (uint64_t)(src_y + src_height) > seg->size / stride) ||
-        need > (uint64_t)seg->size) {
-        y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR, shmseg_id,
-                                pkt[0]);       /* BadShmSeg */
-        return 0;
     }
 
     src = (uint8_t *)seg->addr + offset;

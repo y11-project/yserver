@@ -10,10 +10,11 @@
 
 #include "y11.h"
 #include "wire.h"
-#ifdef Y11_DUAL_VERIFY
-#include <assert.h>
 
 #include "safe.h"
+
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
 #endif
 
 /* ---- drawable resolution ------------------------------------------------------ */
@@ -187,26 +188,24 @@ int y11_render_req_poly_fill_rectangle(struct y11_client *c,
                                        size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    size_t avail, nrects, i;
+    size_t nrects, i;
     struct y11_gc *gc;
     y11_drawable_t *d;
 
     if (len - data_off < 8u)
         goto badlength;
-    avail = len - data_off - 8u;
-#ifdef Y11_DUAL_VERIFY
     {
-        uint32_t dv_n = 0;
+        uint32_t n = 0;
 
-        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
-            Y11_SAFE_OK)
+        if (y11_validate_list(len - data_off, 8u, 8u, &n) != Y11_SAFE_OK)
             goto badlength;
-        assert((size_t)dv_n == avail / 8u);
+        nrects = n;
     }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C division, kept as the CI cross-check. */
+    assert((len - data_off - 8u) % 8u == 0u);
+    assert((size_t)nrects == (len - data_off - 8u) / 8u);
 #endif
-    if (avail % 8u != 0)
-        goto badlength;
-    nrects = avail / 8u;
 
     gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
     d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
@@ -711,7 +710,7 @@ int y11_render_req_poly_point(struct y11_client *c, const uint8_t *pkt,
                               size_t len, size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    size_t avail, npoints, i;
+    size_t npoints, i;
     struct y11_gc *gc;
     y11_drawable_t *d;
     uint8_t coord_mode = pkt[1];
@@ -719,20 +718,18 @@ int y11_render_req_poly_point(struct y11_client *c, const uint8_t *pkt,
 
     if (len - data_off < 8u)
         goto badlength;
-    avail = len - data_off - 8u;
-#ifdef Y11_DUAL_VERIFY
     {
-        uint32_t dv_n = 0;
+        uint32_t n = 0;
 
-        if (y11_validate_list(len - data_off, 8u, 4u, &dv_n) !=
-            Y11_SAFE_OK)
+        if (y11_validate_list(len - data_off, 8u, 4u, &n) != Y11_SAFE_OK)
             goto badlength;
-        assert((size_t)dv_n == avail / 4u);
+        npoints = n;
     }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C division, kept as the CI cross-check. */
+    assert((len - data_off - 8u) % 4u == 0u);
+    assert((size_t)npoints == (len - data_off - 8u) / 4u);
 #endif
-    if (avail % 4u != 0)
-        goto badlength;
-    npoints = avail / 4u;
 
     gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
     d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
@@ -769,7 +766,7 @@ int y11_render_req_poly_line(struct y11_client *c, const uint8_t *pkt,
                              size_t len, size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    size_t avail, npoints, i;
+    size_t npoints, i;
     struct y11_gc *gc;
     y11_drawable_t *d;
     uint8_t coord_mode = pkt[1];
@@ -777,20 +774,18 @@ int y11_render_req_poly_line(struct y11_client *c, const uint8_t *pkt,
 
     if (len - data_off < 8u)
         goto badlength;
-    avail = len - data_off - 8u;
-#ifdef Y11_DUAL_VERIFY
     {
-        uint32_t dv_n = 0;
+        uint32_t n = 0;
 
-        if (y11_validate_list(len - data_off, 8u, 4u, &dv_n) !=
-            Y11_SAFE_OK)
+        if (y11_validate_list(len - data_off, 8u, 4u, &n) != Y11_SAFE_OK)
             goto badlength;
-        assert((size_t)dv_n == avail / 4u);
+        npoints = n;
     }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C division, kept as the CI cross-check. */
+    assert((len - data_off - 8u) % 4u == 0u);
+    assert((size_t)npoints == (len - data_off - 8u) / 4u);
 #endif
-    if (avail % 4u != 0)
-        goto badlength;
-    npoints = avail / 4u;
 
     gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
     d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
@@ -835,26 +830,24 @@ int y11_render_req_poly_segment(struct y11_client *c, const uint8_t *pkt,
                                 size_t len, size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    size_t avail, nsegs, i;
+    size_t nsegs, i;
     struct y11_gc *gc;
     y11_drawable_t *d;
 
     if (len - data_off < 8u)
         goto badlength;
-    avail = len - data_off - 8u;
-#ifdef Y11_DUAL_VERIFY
     {
-        uint32_t dv_n = 0;
+        uint32_t n = 0;
 
-        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
-            Y11_SAFE_OK)
+        if (y11_validate_list(len - data_off, 8u, 8u, &n) != Y11_SAFE_OK)
             goto badlength;
-        assert((size_t)dv_n == avail / 8u);
+        nsegs = n;
     }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C division, kept as the CI cross-check. */
+    assert((len - data_off - 8u) % 8u == 0u);
+    assert((size_t)nsegs == (len - data_off - 8u) / 8u);
 #endif
-    if (avail % 8u != 0)
-        goto badlength;
-    nsegs = avail / 8u;
 
     gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
     d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),
@@ -886,26 +879,24 @@ int y11_render_req_poly_rectangle(struct y11_client *c, const uint8_t *pkt,
                                   size_t len, size_t data_off)
 {
     const uint8_t *body = pkt + data_off;
-    size_t avail, nrects, i;
+    size_t nrects, i;
     struct y11_gc *gc;
     y11_drawable_t *d;
 
     if (len - data_off < 8u)
         goto badlength;
-    avail = len - data_off - 8u;
-#ifdef Y11_DUAL_VERIFY
     {
-        uint32_t dv_n = 0;
+        uint32_t n = 0;
 
-        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
-            Y11_SAFE_OK)
+        if (y11_validate_list(len - data_off, 8u, 8u, &n) != Y11_SAFE_OK)
             goto badlength;
-        assert((size_t)dv_n == avail / 8u);
+        nrects = n;
     }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C division, kept as the CI cross-check. */
+    assert((len - data_off - 8u) % 8u == 0u);
+    assert((size_t)nrects == (len - data_off - 8u) / 8u);
 #endif
-    if (avail % 8u != 0)
-        goto badlength;
-    nrects = avail / 8u;
 
     gc = y11_render_gc_lookup(y11_wire_get32(body + 4));
     d = y11_render_validate(c, pkt[0], y11_wire_get32(body + 4),

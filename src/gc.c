@@ -10,8 +10,11 @@
 
 #include "y11.h"
 #include "wire.h"
-#ifdef Y11_DUAL_VERIFY
+
 #include "safe.h"
+
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
 #endif
 
 /* Accepted GC value-mask bits (GCFunction .. GCArcMode). */
@@ -44,11 +47,6 @@ enum {
     Y11_GCV_DASHES            = 1u << 21,
     Y11_GCV_ARC_MODE          = 1u << 22
 };
-
-static unsigned y11_popcount_gc(uint32_t v)
-{
-    return y11_popcount32(v);
-}
 
 /* ---- lifecycle ------------------------------------------------------------------ */
 
@@ -185,7 +183,6 @@ int y11_gc_req_create(struct y11_client *c, const uint8_t *pkt,
     const uint8_t *body = pkt + data_off;
     size_t avail = len - data_off;
     uint32_t value_mask, cid, drawable_id;
-    unsigned nvalues;
     struct y11_window *win;
     struct y11_pixmap *pix;
     struct y11_gc *gc;
@@ -198,13 +195,21 @@ int y11_gc_req_create(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, value_mask, pkt[0]);
         return 0;
     }
-    nvalues = y11_popcount_gc(value_mask);
+    {
+        y11_safe_status st = y11_validate_value_mask(value_mask,
+                                                     avail - 12u);
+
 #ifdef Y11_DUAL_VERIFY
-    if (y11_validate_value_mask(value_mask, avail - 12u) != Y11_SAFE_OK)
-        goto badlength;
+        /* Retired C bound, kept as the CI cross-check; the validator
+         * is stricter and refuses trailing slack bytes as well. */
+        unsigned nvalues = y11_popcount32(value_mask);
+
+        assert(st != Y11_SAFE_OK ||
+               avail - 12u >= (size_t)nvalues * 4u);
 #endif
-    if (avail - 12u < (size_t)nvalues * 4u)
-        goto badlength;
+        if (st != Y11_SAFE_OK)
+            goto badlength;
+    }
 
     cid = y11_wire_get32(body + 0);
     drawable_id = y11_wire_get32(body + 4);
@@ -270,7 +275,6 @@ int y11_gc_req_change(struct y11_client *c, const uint8_t *pkt,
     const uint8_t *body = pkt + data_off;
     size_t avail = len - data_off;
     uint32_t value_mask, cid;
-    unsigned nvalues;
     struct y11_gc *gc;
     uint8_t err;
 
@@ -281,13 +285,21 @@ int y11_gc_req_change(struct y11_client *c, const uint8_t *pkt,
         y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, value_mask, pkt[0]);
         return 0;
     }
-    nvalues = y11_popcount_gc(value_mask);
+    {
+        y11_safe_status st = y11_validate_value_mask(value_mask,
+                                                     avail - 8u);
+
 #ifdef Y11_DUAL_VERIFY
-    if (y11_validate_value_mask(value_mask, avail - 8u) != Y11_SAFE_OK)
-        goto badlength;
+        /* Retired C bound, kept as the CI cross-check; the validator
+         * is stricter and refuses trailing slack bytes as well. */
+        unsigned nvalues = y11_popcount32(value_mask);
+
+        assert(st != Y11_SAFE_OK ||
+               avail - 8u >= (size_t)nvalues * 4u);
 #endif
-    if (avail - 8u < (size_t)nvalues * 4u)
-        goto badlength;
+        if (st != Y11_SAFE_OK)
+            goto badlength;
+    }
 
     cid = y11_wire_get32(body + 0);
     gc = y11_resource_get(cid, Y11_RESOURCE_GC);

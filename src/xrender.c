@@ -11,10 +11,11 @@
 #include <stdio.h>
 #include "y11.h"
 #include "wire.h"
-#ifdef Y11_DUAL_VERIFY
-#include <assert.h>
 
 #include "safe.h"
+
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
 #endif
 
 /* RENDER sub-opcodes (render.h). */
@@ -561,17 +562,12 @@ static int y11_render_fill_rectangles(struct y11_client *c,
     uint32_t color, color_alpha;
     size_t nrects, i;
 
-    if (len - data_off < 16u || ((len - data_off - 16u) & 7u) != 0u)
+    if (y11_validate_list(len - data_off, 16u, 8u, NULL) != Y11_SAFE_OK)
         return y11_dispatch_bad_length(c, pkt[0]);
 #ifdef Y11_DUAL_VERIFY
-    {
-        uint32_t dv_n = 0;
-
-        if (y11_validate_list(len - data_off, 16u, 8u, &dv_n) !=
-            Y11_SAFE_OK ||
-            dv_n != (uint32_t)((len - data_off - 16u) / 8u))
-            return y11_dispatch_bad_length(c, pkt[0]);
-    }
+    /* Retired C bound, kept as the CI cross-check. */
+    assert(len - data_off >= 16u);
+    assert(((len - data_off - 16u) & 7u) == 0u);
 #endif
 
     op = body[0];

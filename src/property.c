@@ -10,8 +10,11 @@
 
 #include "y11.h"
 #include "wire.h"
-#ifdef Y11_DUAL_VERIFY
+
 #include "safe.h"
+
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
 #endif
 
 /* ---- storage ------------------------------------------------------------------ */
@@ -188,11 +191,17 @@ int y11_property_req_change(struct y11_client *c, const uint8_t *pkt,
     }
 
     nbytes = (size_t)nunits * (size_t)format / 8u;
-#ifdef Y11_DUAL_VERIFY
     {
         y11_safe_status st = y11_validate_property_payload(
             format, nunits, len - data_off - 20u);
 
+#ifdef Y11_DUAL_VERIFY
+        /* Retired C bound, kept as the CI cross-check; the validator
+         * requires the padded count to fit exactly, with no slack. */
+        assert(st != Y11_SAFE_OK ||
+               len - data_off - 20u >=
+                   y11_wire_pad4((uint32_t)nbytes));
+#endif
         if (st == Y11_SAFE_INVALID_HEADER) {
             y11_dispatch_send_error(c, Y11_ERR_BAD_VALUE, format,
                                     pkt[0]);
@@ -200,11 +209,6 @@ int y11_property_req_change(struct y11_client *c, const uint8_t *pkt,
         }
         if (st != Y11_SAFE_OK)
             return y11_dispatch_bad_length(c, pkt[0]);
-    }
-#endif
-    if (len - data_off - 20u < y11_wire_pad4((uint32_t)nbytes)) {
-        /* the wire data is padded to a 4-byte boundary */
-        return y11_dispatch_bad_length(c, pkt[0]);
     }
 
     if (y11_property_set(win, name, type, format, body + 20, nbytes,

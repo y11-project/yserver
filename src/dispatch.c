@@ -12,10 +12,10 @@
 #include "y11.h"
 #include "wire.h"
 
+#include "safe.h"
+
 #ifdef Y11_DUAL_VERIFY
 #include <assert.h>
-
-#include "safe.h"
 #endif
 
 /* ---- reply / error encoding ------------------------------------------------ */
@@ -78,27 +78,28 @@ void y11_dispatch_send_error(struct y11_client *c, uint8_t code,
                              uint32_t resource_id, uint8_t major_opcode)
 {
     y11_error err;
+    y11_safe_status st;
 
     if (y11_debug)
         fprintf(stderr, "y11: client %d: error code %u res 0x%lx major %u\n",
                 c->slot, code, (unsigned long)resource_id, major_opcode);
 
-#ifdef Y11_DUAL_VERIFY
-    {
-        y11_safe_status st = y11_format_error(
-            code, major_opcode, 0, c->sequence_number, resource_id,
-            (uint8_t)'l', (uint8_t *)&err, sizeof(err));
+    st = y11_format_error(code, major_opcode, 0, c->sequence_number,
+                          resource_id, (uint8_t)'l', (uint8_t *)&err,
+                          sizeof(err));
 
-        assert(st == Y11_SAFE_OK);
-        y11_dispatch_send_reply(c, &err, sizeof(err));
-        return;
-    }
+#ifdef Y11_DUAL_VERIFY
+    /* Retired C frame layout, kept as the CI cross-check; the
+     * sequence bytes are stamped by send_reply afterwards. */
+    assert(st == Y11_SAFE_OK);
+    assert(err.type == 0);
+    assert(err.error_code == code);
+    assert(y11_wire_get32(&err.resource_id) == resource_id);
+    assert(err.minor_opcode == 0);
+    assert(err.major_opcode == major_opcode);
+#else
+    (void)st;                       /* the formatter is a total function */
 #endif
-    memset(&err, 0, sizeof(err));
-    err.type = 0;
-    err.error_code = code;
-    y11_wire_put32(&err.resource_id, resource_id);
-    err.major_opcode = major_opcode;
 
     y11_dispatch_send_reply(c, &err, sizeof(err));
 }
@@ -1291,19 +1292,13 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     uint16_t wire_len = y11_wire_get16(pkt + 2);
     size_t data_off;
 
+    /* Below-minimum packets never reach dispatch: the framing layer
+     * owns the opcode gate and rejects them with BadLength. */
+
     /* Strict sequence rule: every request packet increments the counter. */
     c->sequence_number++;
 #ifdef Y11_DUAL_VERIFY
     c->dv_opcode = opcode;
-#endif
-
-#ifdef Y11_DUAL_VERIFY
-    /* The Rust frame gate flags below-minimum packets; the make build
-     * keeps the handler-level fixed-part checks as its defense. */
-    if (len < (size_t)y11_opcode_min_len(opcode)) {
-        y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, opcode);
-        return 0;
-    }
 #endif
 
     if (y11_debug) {
