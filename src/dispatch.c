@@ -31,6 +31,10 @@ void y11_dispatch_send_reply(struct y11_client *c, void *rep, size_t len)
     b[2] = (uint8_t)(c->sequence_number & 0xFFu);
     b[3] = (uint8_t)((c->sequence_number >> 8) & 0xFFu);
 
+#ifdef Y11_DUAL_VERIFY
+    y11_reply_audit_head(c, b, len);
+#endif
+
     if (y11_debug)
         fprintf(stderr, "y11: client %d: reply seq %u len %lu\n",
                 c->slot, c->sequence_number, (unsigned long)len);
@@ -50,6 +54,10 @@ void y11_dispatch_send_reply_fd(struct y11_client *c, void *rep, size_t len,
 
     b[2] = (uint8_t)(c->sequence_number & 0xFFu);
     b[3] = (uint8_t)((c->sequence_number >> 8) & 0xFFu);
+
+#ifdef Y11_DUAL_VERIFY
+    y11_reply_audit_head(c, b, len);
+#endif
 
     if (y11_client_send_fd(c, rep, len, fd) != 0)
         c->dead = 1;
@@ -1285,6 +1293,9 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
 
     /* Strict sequence rule: every request packet increments the counter. */
     c->sequence_number++;
+#ifdef Y11_DUAL_VERIFY
+    c->dv_opcode = opcode;
+#endif
 
 #ifdef Y11_DUAL_VERIFY
     /* The Rust frame gate flags below-minimum packets; the make build

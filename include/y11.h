@@ -436,6 +436,11 @@ struct y11_client {
     int wants_close;            /* protocol failure: close after flushing */
     int big_requests;           /* BIG-REQUESTS enabled for this client */
     int64_t handshake_ms;      /* monotonic deadline for the setup phase */
+#ifdef Y11_DUAL_VERIFY
+    uint8_t dv_opcode;         /* opcode of the request being dispatched */
+    uint32_t dv_reply_words;  /* split reply: declared CARD32 length */
+    size_t dv_reply_have;      /* split reply: bytes queued so far */
+#endif
     uint8_t close_down_mode;    /* DestroyAll(0), RetainPermanent, RetainTemporary */
     uint32_t sequence_number;   /* last request sequence seen */
     yid_t resource_id_base;     /* base of this client's resource id range */
@@ -584,6 +589,11 @@ struct y11_client *y11_client_create(int fd, int slot);
 int  y11_client_handshake_timeout(void);
 /* Close clients whose setup phase never completed. */
 void y11_client_reap_handshakes(void);
+#ifdef Y11_DUAL_VERIFY
+/* Shadow-build reply audit: length words vs actual queued bytes. */
+void y11_reply_audit_head(struct y11_client *c, const uint8_t *rep,
+                          size_t len);
+#endif
 void y11_client_destroy(struct y11_server *srv, struct y11_client *c);
 void y11_client_kill_others(struct y11_client *except);
 void y11_client_bind_server(struct y11_server *srv);
