@@ -106,7 +106,7 @@ every output is by caller-provided POD out-parameter.
 | List payload validation | render.c/xrender.c/present.c divisibility checks (§1.4) | `y11_validate_list` (landed) |
 | SHM bounds math | the uint64 stride/need formulas in `y11_shm_put_image` | `y11_shm_bounds` (landed) |
 | Error frame formatting | `y11_dispatch_send_error` / `y11_dispatch_bad_length` bytes | `y11_format_error_frame` |
-| Reply length sizing | the `pad4(...)/4` CARD32 computations scattered across reply builders | `y11_safe_reply_length_words` |
+| Reply length sizing | the `pad4(...)/4` CARD32 computations scattered across reply builders | `y11_validate_reply_size` (landed) |
 
 ### 2.2 Retained in C99 — `y11` core
 
@@ -191,13 +191,17 @@ opcode gate under `Y11_DUAL_VERIFY`, so below-minimum packets take
 BadLength uniformly (Xorg parity) instead of only where handlers
 happen to check.
 
-Remaining surface:
-
-```c
-/* Phase 5 */
-uint32_t y11_safe_reply_length_words(size_t payload_bytes,
-                                     uint8_t *overflow);
-```
+Landed with Phase 5: `y11_validate_reply_size` — the declared CARD32
+length words must cover the queued bytes exactly (checked u32
+arithmetic), fixed-shape core replies carry their exact word count
+(GetWindowAttributes 3, QueryKeymap 2, GetGeometry/QueryPointer/
+TranslateCoords/GetInputFocus/GetSelectionOwner 0), and the
+GetProperty/GetAtomName replies reconcile their embedded item or
+string counts with zeroed trailing padding.  The shadow build also
+carries split-reply accounting in `y11_client_send`: replies queued
+as a header plus raw payload sends (XKB GetMap's 40-byte header,
+GetProperty's zero-filled tail) must close at `32 + words*4` before
+the next reply opens.
 
 Linkage notes for the thorn ecosystem:
 
@@ -302,6 +306,23 @@ collapsing onto the formatter) is the next step.
    in the C event loop (policy, not parsing).
 4. Delete the now-dead C check helpers; the corpus becomes the
    regression contract for both languages.
+
+### Phase 5 — outbound reply sizing (landed)
+
+1. `y11_validate_reply_size` audits every reply leaving the shadow
+   build: `32 + words*4` in checked arithmetic, exact word counts for
+   the fixed-shape opcodes, and the pad-zero grammar audits for
+   GetProperty and GetAtomName (trailing uninitialized heap is a
+   leak, so dirty padding is a mismatch).
+2. `y11_reply_audit_head` hooks `y11_dispatch_send_reply` (and the
+   fd variant); split replies — 32- or 40-byte header plus raw
+   `y11_client_send` tails — accumulate in the client until the
+   declared total closes.  A new reply while one is open means the
+   old length lied.
+3. wirefuzz corpus 4 reassembles real replies (GetGeometry,
+   GetWindowAttributes, QueryTree, GetAtomName, GetProperty) and
+   validates them with the buffer pointer, so the pad audits run
+   against live traffic.
 
 ### Verification gates (every phase)
 
