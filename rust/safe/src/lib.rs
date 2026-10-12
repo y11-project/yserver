@@ -18,6 +18,7 @@ mod handshake;
 mod mask;
 mod opcode;
 mod property;
+mod reply;
 mod shm;
 
 pub use error::Y11SafeStatus;
@@ -28,6 +29,7 @@ pub use mask::y11_validate_value_mask;
 pub use list::y11_validate_list;
 pub use opcode::y11_opcode_min_len;
 pub use property::y11_validate_property_payload;
+pub use reply::y11_validate_reply_size;
 pub use shm::y11_shm_bounds;
 
 use core::panic::PanicInfo;

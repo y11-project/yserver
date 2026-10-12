@@ -85,6 +85,18 @@ y11_safe_status y11_validate_list(size_t avail,
                                   uint32_t *n_elements);
 
 /*
+ * Audit one complete outbound reply: the CARD32 length word must
+ * account for every transmitted byte (32 + words * 4, checked),
+ * fixed-shape core opcodes carry their exact count, and the
+ * string/item replies (GetProperty, GetAtomName) must have zeroed
+ * wire padding.  out_buf may be NULL to skip the pad inspection.
+ */
+y11_safe_status y11_validate_reply_size(uint8_t major_opcode,
+                                        uint32_t reply_len_words,
+                                        size_t actual_total_bytes,
+                                        const uint8_t *out_buf);
+
+/*
  * Byte extent of a ShmPutImage blit inside the client's segment:
  * depth 1 packs rows to 4-byte strides, everything else is 32bpp.
  * Oversized source extents are PAYLOAD_MISMATCH, checked-arithmetic
