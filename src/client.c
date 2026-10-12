@@ -6,6 +6,8 @@
  */
 
 #include <errno.h>
+#include <limits.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,7 @@
 struct y11_client *y11_client_create(int fd, int slot)
 {
     struct y11_client *c;
+    struct timespec ts;
 
     c = calloc(1, sizeof(*c));
     if (c == NULL)
@@ -34,6 +37,9 @@ struct y11_client *y11_client_create(int fd, int slot)
     c->fd = fd;
     c->slot = slot;
     c->state = Y11_CLIENT_HANDSHAKE;
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    c->handshake_ms = (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000 +
+                      Y11_HANDSHAKE_TIMEOUT_MS;
     c->sequence_number = 0;
     c->resource_id_base = (yid_t)(slot + 1) * Y11_RID_BASE_STEP;   /* 0x00100000, 0x00200000, ... */
 
@@ -316,6 +322,12 @@ int y11_client_pop_fd(struct y11_client *c)
  */
 int y11_client_send(struct y11_client *c, const void *data, size_t len)
 {
+    if (c->out_len + len > Y11_OUTBUF_MAX) {
+        /* A client that stopped reading while replies kept queuing:
+         * drop it rather than grow without bound. */
+        c->dead = 1;
+        return -1;
+    }
     if (c->out_len + len > c->out_cap) {
         size_t cap = c->out_cap;
         uint8_t *buf;
@@ -574,6 +586,62 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
     c->state = Y11_CLIENT_RUNNING;
     c->sequence_number = 0;
     return 0;
+}
+
+/* ---- handshake parking ----------------------------------------------------- */
+
+/* Monotonic milliseconds now; the same clock the deadline uses. */
+static int64_t y11_client_now_ms(void)
+{
+    struct timespec ts;
+
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/*
+ * An unauthenticated connection can park a half-open setup forever,
+ * holding its reassembly buffer; the poll loop wakes on this to reap.
+ */
+int y11_client_handshake_timeout(void)
+{
+    int64_t now = 0;
+    int best = -1;
+    size_t i;
+
+    for (i = 0; i < Y11_MAX_CLIENTS; i++) {
+        struct y11_client *c = y11_client_server->clients[i];
+
+        if (c == NULL || c->state != Y11_CLIENT_HANDSHAKE)
+            continue;
+        if (now == 0)
+            now = y11_client_now_ms();
+        {
+            int64_t left = c->handshake_ms - now;
+            int ms = left < 0 ? 0 : (int)(left > INT_MAX ? INT_MAX : left);
+
+            if (best < 0 || ms < best)
+                best = ms;
+        }
+    }
+    return best;
+}
+
+void y11_client_reap_handshakes(void)
+{
+    int64_t now = y11_client_now_ms();
+    size_t i;
+
+    for (i = 0; i < Y11_MAX_CLIENTS; i++) {
+        struct y11_client *c = y11_client_server->clients[i];
+
+        if (c == NULL || c->state != Y11_CLIENT_HANDSHAKE)
+            continue;
+        if (now < c->handshake_ms)
+            continue;
+        fprintf(stderr, "y11: client %d: handshake timeout\n", c->slot);
+        c->dead = 1;
+    }
 }
 
 /* ---- request stream parsing ------------------------------------------------- */

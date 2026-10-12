@@ -269,7 +269,16 @@ void y11_server_run(struct y11_server *srv)
             n++;
         }
 
-        ready = poll(fds, n, y11_input_repeat_timeout());
+        {
+            int t = y11_input_repeat_timeout();
+            int h = y11_client_handshake_timeout();
+
+            if (t < 0)
+                t = h;
+            else if (h >= 0 && h < t)
+                t = h;
+            ready = poll(fds, n, t);
+        }
         if (ready < 0) {
             if (errno == EINTR) {
                 /* A signal (VT switch and friends) may only set flags
@@ -286,6 +295,7 @@ void y11_server_run(struct y11_server *srv)
          * physical release in this batch cancels the pending repeat). */
         if (y11_input_repeat_timeout() == 0)
             y11_input_repeat_fire();
+        y11_client_reap_handshakes();
 
         if ((fds[0].revents & POLLIN) != 0)
             y11_server_accept(srv);

@@ -33,7 +33,9 @@ typedef uint32_t yid_t;
 #define Y11_BIGREQ_MAX_UNITS   4194303u /* max 4-byte units once BIG-REQUESTS is enabled */
 #define Y11_INBUF_MIN          16384u   /* initial request reassembly buffer size */
 #define Y11_INBUF_MAX          ((size_t)Y11_BIGREQ_MAX_UNITS * 4u + 8u)
+#define Y11_OUTBUF_MAX         Y11_INBUF_MAX   /* pending-reply ceiling */
 #define Y11_OUTBUF_MIN         4096u    /* initial pending-reply buffer size */
+#define Y11_HANDSHAKE_TIMEOUT_MS 10000  /* parked setup reaped after this */
 
 /* ---- resource id space ------------------------------------------------ */
 
@@ -433,6 +435,7 @@ struct y11_client {
     int dead;                   /* socket EOF or fatal I/O error */
     int wants_close;            /* protocol failure: close after flushing */
     int big_requests;           /* BIG-REQUESTS enabled for this client */
+    int64_t handshake_ms;      /* monotonic deadline for the setup phase */
     uint8_t close_down_mode;    /* DestroyAll(0), RetainPermanent, RetainTemporary */
     uint32_t sequence_number;   /* last request sequence seen */
     yid_t resource_id_base;     /* base of this client's resource id range */
@@ -577,6 +580,10 @@ void y11_server_shutdown(struct y11_server *srv);
 /* ---- src/client.c ------------------------------------------------------- */
 
 struct y11_client *y11_client_create(int fd, int slot);
+/* Milliseconds until the earliest parked handshake expires, or -1. */
+int  y11_client_handshake_timeout(void);
+/* Close clients whose setup phase never completed. */
+void y11_client_reap_handshakes(void);
 void y11_client_destroy(struct y11_server *srv, struct y11_client *c);
 void y11_client_kill_others(struct y11_client *except);
 void y11_client_bind_server(struct y11_server *srv);
