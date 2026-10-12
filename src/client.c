@@ -17,13 +17,14 @@
 #include "y11.h"
 #include "wire.h"
 
+#include "safe.h"
+
 #ifdef Y11_DUAL_VERIFY
 #include <assert.h>
-
-static void y11_reply_audit_tail(struct y11_client *c, size_t len);
 #endif
 
-#include "safe.h"
+static void y11_reply_audit_tail(struct y11_client *c, size_t len);
+static void y11_reply_audit_fail(struct y11_client *c, const char *why);
 
 /* ---- allocation ---------------------------------------------------------- */
 
@@ -324,9 +325,7 @@ int y11_client_pop_fd(struct y11_client *c)
  */
 int y11_client_send(struct y11_client *c, const void *data, size_t len)
 {
-#ifdef Y11_DUAL_VERIFY
     y11_reply_audit_tail(c, len);
-#endif
     if (c->out_len + len > Y11_OUTBUF_MAX) {
         /* A client that stopped reading while replies kept queuing:
          * drop it rather than grow without bound. */
@@ -593,25 +592,43 @@ static int y11_client_handshake(struct y11_client *c, size_t *off)
     return 0;
 }
 
-#ifdef Y11_DUAL_VERIFY
 /*
- * Reply length audit: the CARD32 words field must account for every
+ * Outbound reply audit: the CARD32 words field must account for every
  * queued byte.  Complete replies validate immediately; split replies
- * (32-byte header queued by y11_dispatch_send_reply, payload by raw
- * y11_client_send calls) accumulate in dv_reply_have until the count
- * closes.  Error frames are not replies: type byte 0 skips the audit.
+ * (a 32- or 40-byte header queued by y11_dispatch_send_reply, payload
+ * by raw y11_client_send calls) accumulate in audit_reply_have until
+ * the count closes.  Error frames are not replies: type byte 0 skips
+ * the audit.  A failed audit drops the connection — its stream
+ * position is no longer trustworthy — while the dual-verify build
+ * turns the same failure into an abort.
  */
+static void y11_reply_audit_fail(struct y11_client *c, const char *why)
+{
+#ifdef Y11_DUAL_VERIFY
+    fprintf(stderr, "y11: client %d: reply audit: %s\n", c->slot, why);
+    assert(0);
+#else
+    fprintf(stderr, "y11: client %d: reply audit failed: %s\n",
+            c->slot, why);
+    c->dead = 1;
+#endif
+}
+
 void y11_reply_audit_head(struct y11_client *c, const uint8_t *rep,
                           size_t len)
 {
     uint32_t words = y11_wire_get32(rep + 4);
 
     if (rep[0] != 1) {          /* error frame: not a reply */
-        c->dv_reply_words = 0;
+        c->audit_reply_words = 0;
         return;
     }
-    /* a new reply while one is open means the old length lied */
-    assert(c->dv_reply_words == 0);
+    if (c->audit_reply_words != 0) {
+        /* a new reply while one is open means the old length lied */
+        c->audit_reply_words = 0;
+        y11_reply_audit_fail(c, "split reply never closed");
+        return;
+    }
 
     if (words > 0 && len < 32u + (size_t)words * 4u) {
         /* Split reply: the header now, the tail via raw sends.  The
@@ -619,34 +636,37 @@ void y11_reply_audit_head(struct y11_client *c, const uint8_t *rep,
          * counts as split.  The fixed-shape opcodes never split, so
          * the count check runs against the declared total. */
         y11_safe_status st = y11_validate_reply_size(
-            c->dv_opcode, words, 32u + (size_t)words * 4u, NULL);
+            c->audit_opcode, words, 32u + (size_t)words * 4u, NULL);
 
-        assert(st == Y11_SAFE_OK);
-        c->dv_reply_words = words;
-        c->dv_reply_have = 0;
+        if (st != Y11_SAFE_OK) {
+            y11_reply_audit_fail(c, "split header rejected");
+            return;
+        }
+        c->audit_reply_words = words;
+        c->audit_reply_have = 0;
         return;
     }
-    c->dv_reply_words = 0;
     {
         y11_safe_status st = y11_validate_reply_size(
-            c->dv_opcode, words, len, rep);
+            c->audit_opcode, words, len, rep);
 
-        assert(st == Y11_SAFE_OK);
+        if (st != Y11_SAFE_OK)
+            y11_reply_audit_fail(c, "complete reply mismatch");
     }
 }
 
 static void y11_reply_audit_tail(struct y11_client *c, size_t len)
 {
-    if (c->dv_reply_words == 0)
+    if (c->audit_reply_words == 0)
         return;                 /* complete replies count here only once */
-    c->dv_reply_have += len;
-    if (c->dv_reply_have >= 32u + (size_t)c->dv_reply_words * 4u) {
-        assert(c->dv_reply_have ==
-               32u + (size_t)c->dv_reply_words * 4u);
-        c->dv_reply_words = 0;
+    c->audit_reply_have += len;
+    if (c->audit_reply_have >= 32u + (size_t)c->audit_reply_words * 4u) {
+        if (c->audit_reply_have !=
+            32u + (size_t)c->audit_reply_words * 4u)
+            y11_reply_audit_fail(c, "split reply overshot its words");
+        c->audit_reply_words = 0;
     }
 }
-#endif
 
 /* ---- handshake parking ----------------------------------------------------- */
 
