@@ -1,9 +1,8 @@
 /*
  * wirefuzz.c - Loopback regression harness: spawns a private headless
  * server, sweeps the per-opcode underflow probe, replays the
- * truncated-handshake corpus and checks the slow-reader cap.  Exit 0
- * is the pass condition; it also serves as the Phase 0 corpus the
- * audit doc still owed.
+ * truncated-handshake corpus, checks the slow-reader cap and audits
+ * outbound reply lengths and padding.  Exit 0 is the pass condition.
  * SPDX-License-Identifier: BSD-2-Clause
  */
 #define _POSIX_C_SOURCE 200809L
@@ -33,6 +32,7 @@
 
 static pid_t wf_server;
 static int wf_checks;
+static uint32_t wf_id_base;    /* resource-id base of the last handshake */
 
 #define EXPECT(cond)                                                     \
     do {                                                                \
@@ -162,7 +162,11 @@ static int wf_handshake(int fd)
         if (have >= sizeof(buf))
             return -1;
     }
-    return buf[0] == 1 ? 0 : -1;
+    if (buf[0] != 1)
+        return -1;
+    wf_id_base = (uint32_t)buf[12] | ((uint32_t)buf[13] << 8) |
+                 ((uint32_t)buf[14] << 16) | ((uint32_t)buf[15] << 24);
+    return 0;
 }
 
 /* Read one 32-byte frame; 0 = frame, -1 = timeout/close, 1 = EOF. */
@@ -183,6 +187,37 @@ static int wf_read_frame(int fd, uint8_t out[32])
         have += (size_t)n;
     }
     return 0;
+}
+
+static int wf_read_n(int fd, uint8_t *out, size_t n)
+{
+    ssize_t r;
+    size_t have = 0;
+
+    while (have < n) {
+        r = read(fd, out + have, n - have);
+        if (r <= 0) {
+            if (r < 0 && errno == EINTR)
+                continue;
+            return -1;
+        }
+        have += (size_t)r;
+    }
+    return 0;
+}
+
+static uint32_t wf_get32(const uint8_t *b)
+{
+    return (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
+           ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+}
+
+static void wf_put32(uint8_t *b, uint32_t v)
+{
+    b[0] = (uint8_t)v;
+    b[1] = (uint8_t)(v >> 8);
+    b[2] = (uint8_t)(v >> 16);
+    b[3] = (uint8_t)(v >> 24);
 }
 
 /* ---- corpus 1: per-opcode underflow probe -------------------------------- */
@@ -362,6 +397,132 @@ static int wf_slow_reader(void)
     return 0;
 }
 
+/* ---- corpus 4: outbound reply sizing and pad audits ---------------------- */
+
+/* Reassemble one full reply into buf (512 bytes) and audit it: the
+ * declared CARD32 words must cover the buffered tail exactly, fixed
+ * opcode shapes must match, and the GetAtomName/GetProperty padding
+ * must read zero. */
+static int wf_reply_roundtrip(int fd, uint8_t opcode)
+{
+    uint8_t buf[512];
+    uint32_t words;
+    size_t total;
+
+    EXPECT(wf_read_frame(fd, buf) == 0);
+    EXPECT(buf[0] == 1);                /* X_Reply */
+    words = wf_get32(buf + 4);
+    EXPECT(words <= 100u);              /* 512-byte reassembly cap */
+    EXPECT(wf_read_n(fd, buf + 32, (size_t)words * 4u) == 0);
+    total = 32u + (size_t)words * 4u;
+    EXPECT(y11_validate_reply_size((uint8_t)opcode, words, total, buf)
+           == Y11_SAFE_OK);
+    return 0;
+}
+
+static int wf_reply_audit(void)
+{
+    uint8_t req[32];
+    uint8_t rep[32];
+    uint32_t atom;
+    int fd;
+
+    fd = wf_connect();
+    EXPECT(fd >= 0);
+    EXPECT(wf_handshake(fd) == 0);
+
+    /* a child of the root makes QueryTree carry a real tail */
+    memset(req, 0, sizeof(req));
+    req[0] = 1;                          /* CreateWindow */
+    req[1] = 24;                          /* depth */
+    req[2] = 8;                           /* length: 32 bytes */
+    wf_put32(req + 4, wf_id_base + 1u);  /* window id in our range */
+    req[8] = (uint8_t)WF_ROOT;
+    req[16] = 0x40; req[18] = 0x40;      /* 64x64 */
+    req[22] = 1;                          /* InputOutput */
+    EXPECT(write(fd, req, 32) == 32);
+
+    /* InternAtom "y11p5": 5 bytes of name force 3 bytes of pad */
+    memset(req, 0, sizeof(req));
+    req[0] = 16;
+    req[2] = 4;                           /* length: 16 bytes */
+    req[4] = 5;                           /* name_len */
+    memcpy(req + 8, "y11p5", 5);
+    EXPECT(write(fd, req, 16) == 16);
+    EXPECT(wf_read_frame(fd, rep) == 0);
+    EXPECT(rep[0] == 1);
+    atom = wf_get32(rep + 8);
+    EXPECT(atom != 0);
+
+    /* GetAtomName: words grammar + zeroed pad audit */
+    memset(req, 0, sizeof(req));
+    req[0] = 17;
+    req[2] = 2;
+    req[4] = (uint8_t)atom; req[5] = (uint8_t)(atom >> 8);
+    req[6] = (uint8_t)(atom >> 16); req[7] = (uint8_t)(atom >> 24);
+    EXPECT(write(fd, req, 8) == 8);
+    if (wf_reply_roundtrip(fd, 17) != 0)
+        return 1;
+
+    /* GetGeometry on the root: fixed 32-byte shape */
+    memset(req, 0, sizeof(req));
+    req[0] = 14;
+    req[2] = 2;
+    req[4] = (uint8_t)WF_ROOT;
+    EXPECT(write(fd, req, 8) == 8);
+    if (wf_reply_roundtrip(fd, 14) != 0)
+        return 1;
+
+    /* GetWindowAttributes: fixed 44-byte shape (3 words) */
+    memset(req, 0, sizeof(req));
+    req[0] = 3;
+    req[2] = 2;
+    req[4] = (uint8_t)WF_ROOT;
+    EXPECT(write(fd, req, 8) == 8);
+    if (wf_reply_roundtrip(fd, 3) != 0)
+        return 1;
+
+    /* QueryTree: 32 + 4*nChildren, assembled and audited in one go */
+    memset(req, 0, sizeof(req));
+    req[0] = 15;
+    req[2] = 2;
+    req[4] = (uint8_t)WF_ROOT;
+    EXPECT(write(fd, req, 8) == 8);
+    if (wf_reply_roundtrip(fd, 15) != 0)
+        return 1;
+
+    /* GetProperty on _NET_SUPPORTED: item-count grammar audit */
+    memset(req, 0, sizeof(req));
+    req[0] = 16;                          /* InternAtom */
+    req[1] = 1;                           /* only if exists */
+    req[2] = 6;                           /* length: 24 bytes */
+    req[4] = 15;                          /* "_NET_SUPPORTED" */
+    memcpy(req + 8, "_NET_SUPPORTED", 15);
+    EXPECT(write(fd, req, 24) == 24);
+    EXPECT(wf_read_frame(fd, rep) == 0);
+    EXPECT(rep[0] == 1);
+    atom = wf_get32(rep + 8);
+    if (atom != 0) {
+        memset(req, 0, sizeof(req));
+        req[0] = 20;                      /* GetProperty */
+        req[2] = 6;                       /* length: 24 bytes */
+        req[4] = (uint8_t)WF_ROOT;        /* window */
+        req[8] = (uint8_t)atom;           /* property */
+        req[9] = (uint8_t)(atom >> 8);
+        req[10] = (uint8_t)(atom >> 16);
+        req[11] = (uint8_t)(atom >> 24);
+        req[12] = 4;                      /* type XA_ATOM */
+        req[20] = 0x10;                   /* longLength 4096 */
+        EXPECT(write(fd, req, 24) == 24);
+        if (wf_reply_roundtrip(fd, 20) != 0)
+            return 1;
+    }
+
+    close(fd);
+    printf("wirefuzz: reply lengths and padding audited\n");
+    return 0;
+}
+
 int main(void)
 {
     /* The slow-reader corpus expects writes to a closed socket to
@@ -374,6 +535,8 @@ int main(void)
     if (wf_handshake_corpus() != 0)
         return 1;
     if (wf_slow_reader() != 0)
+        return 1;
+    if (wf_reply_audit() != 0)
         return 1;
     wf_stop_server();
     printf("wirefuzz: %d checks ok\n", wf_checks);
