@@ -186,10 +186,10 @@ item count must match the request body exactly.
 Landed with Phase 4: `y11_validate_list` (fixed-part + element
 divisibility, adopted by the render/present/xrender lists) and
 `y11_shm_bounds` (checked stride/need arithmetic, shadowing
-`y11_shm_put_image`'s C check).  The sweep also carries a C-side
-opcode gate under `Y11_DUAL_VERIFY`, so below-minimum packets take
-BadLength uniformly (Xorg parity) instead of only where handlers
-happen to check.
+`y11_shm_put_image`'s C check).  The sweep carried a C-side opcode
+gate under `Y11_DUAL_VERIFY` so below-minimum packets took BadLength
+uniformly (Xorg parity); the cutover (§5) moved that gate into the
+framing layer unconditionally.
 
 Landed with Phase 5: `y11_validate_reply_size` — the declared CARD32
 length words must cover the queued bytes exactly (checked u32
@@ -337,3 +337,26 @@ collapsing onto the formatter) is the next step.
 - Parsing of `y11_dispatch_accept_resource` request bodies (unimplemented
   drawing requests, not parser gaps).
 - The dormant GLX bridge beyond the guards already added.
+
+## 5. Cutover — Rust as the primary gatekeeper (landed)
+
+The migration is complete: `libsafe.a` is a mandatory part of every
+build, not a shadow.  The `Makefile` compiles the crate with `rustc`
+into `out/artifacts/libsafe.a` and links it into `out/y11`;
+`build.thorn` keeps its own edge for the verification pipeline.
+
+- `y11_frame_request` and `y11_handshake_parse_header` are the
+  unconditional parse entry points in `src/client.c`.  The framing
+  loop applies I/O policy only (the receive cap, sequencing); the
+  opcode-minimum gate lives in the framer, so below-minimum and
+  zero-length-without-BIG-REQUESTS packets take BadLength with the
+  resync extent the framer reports.  The Phase-1 tolerated
+  divergence on `length16 == 0` is closed.
+- Every request validator, `y11_format_error`, and the outbound
+  reply audit are primary: failures map to protocol errors, and a
+  failed reply audit drops the connection (its stream position is no
+  longer trustworthy) instead of aborting the server.
+- `Y11_DUAL_VERIFY` is now opt-in CI armor, not an enabler: it keeps
+  the retired C arithmetic beside the Rust verdicts as equivalence
+  asserts (set only in build.thorn's y11 target).  Production builds
+  run the validators alone — no double work on the fast path.

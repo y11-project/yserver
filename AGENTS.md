@@ -28,14 +28,18 @@ server itself:
 
 ## Build
 
-- `make` builds `./y11` with `-std=c99 -pedantic -Wall -Wextra -Werror`.
+- `make` builds `./out/y11` with `-std=c99 -pedantic -Wall -Wextra -Werror`.
   The build must be warning-free under both gcc and clang.
+- `make` also compiles the `#![no_std]` validator crate
+  (`rust/safe`, contract `include/safe.h`) with `rustc` into
+  `out/artifacts/libsafe.a` and links it; the crate is a mandatory
+  part of the server, not optional.
 - `make clean`, `make install` (PREFIX/DESTDIR supported).
 - The Makefile is plain POSIX make (no GNU extensions).
 
 ## Running and debugging
 
-- `./y11 [display]` binds `/tmp/.X11-unix/X<n>` (default 0) and maintains
+- `./out/y11 [display]` binds `/tmp/.X11-unix/X<n>` (default 0) and maintains
   the `/tmp/.y11-unix/Y<n>` symlink. SIGINT/SIGTERM unlink the sockets.
 - `Y11_DEBUG=1` logs every request, reply, event and disconnect.
 - Without a seat manager (or while another display server holds DRM
