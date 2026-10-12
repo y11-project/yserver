@@ -13,18 +13,22 @@
 mod error;
 mod error_frame;
 mod frame;
+mod list;
 mod handshake;
 mod mask;
 mod opcode;
 mod property;
+mod shm;
 
 pub use error::Y11SafeStatus;
 pub use error_frame::y11_format_error;
 pub use frame::{y11_frame_request, Y11RequestFrame};
 pub use handshake::{y11_handshake_parse_header, Y11HandshakeReq};
 pub use mask::y11_validate_value_mask;
+pub use list::y11_validate_list;
 pub use opcode::y11_opcode_min_len;
 pub use property::y11_validate_property_payload;
+pub use shm::y11_shm_bounds;
 
 use core::panic::PanicInfo;
 

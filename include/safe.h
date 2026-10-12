@@ -75,6 +75,28 @@ y11_safe_status y11_validate_value_mask(uint32_t value_mask,
 uint16_t y11_opcode_min_len(uint8_t opcode);
 
 /*
+ * Validate a fixed-part + element list body: the remainder after
+ * fixed_part must divide exactly by element_size.  On OK,
+ * *n_elements receives the quotient (n_elements may be NULL).
+ */
+y11_safe_status y11_validate_list(size_t avail,
+                                  size_t fixed_part,
+                                  uint32_t element_size,
+                                  uint32_t *n_elements);
+
+/*
+ * Byte extent of a ShmPutImage blit inside the client's segment:
+ * depth 1 packs rows to 4-byte strides, everything else is 32bpp.
+ * Oversized source extents are PAYLOAD_MISMATCH, checked-arithmetic
+ * overflow is LENGTH_OVERFLOW; a zero extent is trivially OK.
+ */
+y11_safe_status y11_shm_bounds(uint32_t total_width,
+                               uint32_t src_x, uint32_t src_y,
+                               uint32_t src_w, uint32_t src_h,
+                               uint8_t depth, uint32_t offset,
+                               uint64_t seg_size);
+
+/*
  * Format a canonical 32-byte X11 wire error frame into out_buf
  * (out_len must be at least 32): byte 0 reads 0, byte 1 carries
  * error_code, the CARD16 sequence number and CARD32 bad value are
