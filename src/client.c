@@ -20,10 +20,10 @@
 #ifdef Y11_DUAL_VERIFY
 #include <assert.h>
 
-#include "safe.h"
-
 static void y11_reply_audit_tail(struct y11_client *c, size_t len);
 #endif
+
+#include "safe.h"
 
 /* ---- allocation ---------------------------------------------------------- */
 
@@ -530,60 +530,60 @@ static int y11_client_send_setup_success(struct y11_client *c)
 
 /*
  * Parse the connection setup request.  *off is advanced past the bytes
- * consumed.  Returns 0 on success, -1 on a fatal error.
+ * consumed.  Returns 0 on success, -1 on a fatal error.  The Rust
+ * parser owns the 12-byte header; the caller buffers skip_bytes of
+ * authorization data before the handshake completes.
  */
 static int y11_client_handshake(struct y11_client *c, size_t *off)
 {
-    const y11_conn_setup_req *req;
-    uint32_t skip;
+    struct y11_handshake_req hs;
+    y11_safe_status st;
 
-    if (c->in_len - *off < sizeof(*req))
+    st = y11_handshake_parse_header(c->in_buf + *off, c->in_len - *off,
+                                    &hs);
+    if (st == Y11_SAFE_INSUFFICIENT_DATA)
         return 0;               /* wait for the 12-byte header */
-
-    req = (const y11_conn_setup_req *)(c->in_buf + *off);
-
-    if (req->byte_order != 'l') {
+    if (st == Y11_SAFE_INVALID_ENDIAN || hs.byte_order != 'l') {
         /* Big-endian ('B', 0x42) and unknown byte orders are rejected in
          * phase 1; all wire data on this server is little-endian. */
         return y11_client_refuse(c, off,
             "big-endian byte order is not supported (y11 phase 1)");
     }
-
-    if (y11_wire_get16(&req->major_version) != Y11_PROTO_MAJOR) {
+    if (st == Y11_SAFE_UNSUPPORTED_VER) {
         return y11_client_refuse(c, off,
             "unsupported protocol major version (y11 speaks 11)");
     }
-
-    /* Skip the authorization protocol name and data, each padded to a
-     * 4-byte boundary.  Any authorization data is accepted. */
-    skip = y11_wire_pad4(y11_wire_get16(&req->auth_proto_len)) +
-           y11_wire_pad4(y11_wire_get16(&req->auth_data_len));
-    if (c->in_len - *off - sizeof(*req) < skip)
-        return 0;               /* wait for the authorization data */
+    if (st != Y11_SAFE_OK)
+        return -1;      /* defensive: u16 sums cannot reach the cap */
 
 #ifdef Y11_DUAL_VERIFY
-         /* Shadow probe: LE protocol 11 only, so Rust must agree field
-     * by field, including the padded authorization byte count. */
+    /* Retired C header math, kept as the CI cross-check. */
     {
-        struct y11_handshake_req dv_hs;
-        y11_safe_status dv_st = y11_handshake_parse_header(
-            (const uint8_t *)req, c->in_len - *off, &dv_hs);
+        const y11_conn_setup_req *req =
+            (const y11_conn_setup_req *)(c->in_buf + *off);
+        uint32_t dv_skip =
+            y11_wire_pad4(y11_wire_get16(&req->auth_proto_len)) +
+            y11_wire_pad4(y11_wire_get16(&req->auth_data_len));
 
-        assert(dv_st == Y11_SAFE_OK);
-        assert(dv_hs.byte_order == req->byte_order);
-        assert(dv_hs.major_version ==
+        assert(hs.byte_order == req->byte_order);
+        assert(hs.major_version ==
                y11_wire_get16(&req->major_version));
-        assert(dv_hs.minor_version ==
+        assert(hs.minor_version ==
                y11_wire_get16(&req->minor_version));
-        assert(dv_hs.auth_proto_len ==
+        assert(hs.auth_proto_len ==
                y11_wire_get16(&req->auth_proto_len));
-        assert(dv_hs.auth_data_len ==
+        assert(hs.auth_data_len ==
                y11_wire_get16(&req->auth_data_len));
-        assert(dv_hs.skip_bytes == skip);
+        assert(hs.skip_bytes == dv_skip);
     }
 #endif
 
-    *off += sizeof(*req) + skip;
+    /* Skip the authorization protocol name and data, each padded to a
+     * 4-byte boundary.  Any authorization data is accepted. */
+    if (c->in_len - *off - sizeof(y11_conn_setup_req) < hs.skip_bytes)
+        return 0;               /* wait for the authorization data */
+
+    *off += sizeof(y11_conn_setup_req) + hs.skip_bytes;
 
     if (y11_client_send_setup_success(c) != 0)
         return -1;
@@ -706,94 +706,71 @@ void y11_client_reap_handshakes(void)
 
 /* ---- request stream parsing ------------------------------------------------- */
 
-/* Dispatch every complete packet at *off, one sequence number each. */
+/* Dispatch every complete packet at *off, one sequence number each.
+ * The Rust framer owns the stream: length decode, BIG-REQUESTS and
+ * the per-opcode minimum are its verdict.  This loop applies I/O
+ * policy (the receive cap), sequences what it accepts and turns
+ * rejected framing into BadLength with the resync extent the framer
+ * reports. */
 static int y11_client_requests(struct y11_client *c, size_t *off)
 {
     while (c->in_len - *off >= sizeof(y11_req)) {
         const uint8_t *pkt = c->in_buf + *off;
-        uint16_t wire_len = y11_wire_get16(pkt + 2);
-        size_t pkt_len;
+        struct y11_request_frame frame;
+        y11_safe_status st = y11_frame_request(
+            pkt, c->in_len - *off,
+            (uint8_t)(c->big_requests ? 1 : 0), &frame);
         int rc;
 
-#ifdef Y11_DUAL_VERIFY
-                 /* Shadow probe: Rust frames the same bytes independently;
-         * divergence aborts.  One tolerated disagreement: length16 == 0
-         * without the extension is a validator violation, leniently read
-         * as a 4-byte request here. */
-        struct y11_request_frame dv_frame;
-        y11_safe_status dv_st = y11_frame_request(
-            pkt, c->in_len - *off,
-            (uint8_t)(c->big_requests ? 1 : 0), &dv_frame);
-#endif
-
-        if (wire_len == 0) {
-            if (!c->big_requests) {
-                /* BIG-REQUESTS not enabled: the X server reads this as a
-                 * 4-byte request (its opcode-specific fields decide). */
-                pkt_len = sizeof(y11_req);
-#ifdef Y11_DUAL_VERIFY
-                assert(dv_st == Y11_SAFE_INVALID_HEADER);
-#endif
-            } else {
-                /* Extended 8-byte header carries the true length. */
-                uint32_t true_len;
-
-                if (c->in_len - *off < sizeof(y11_big_req)) {
-#ifdef Y11_DUAL_VERIFY
-                    assert(dv_st == Y11_SAFE_INSUFFICIENT_DATA);
-#endif
-                    break;      /* wait for the extended header */
-                }
-                true_len = y11_wire_get32(pkt + 4);
-                if (true_len < 2 || (size_t)true_len * 4u > Y11_INBUF_MAX) {
-                    /* Cannot hold the extended header, or the request is
-                     * larger than this server will ever buffer: fatal.
-                     * Oversize policy is C-side; the pure framer only
-                     * flags unrepresentable lengths. */
-#ifdef Y11_DUAL_VERIFY
-                    assert(dv_st == Y11_SAFE_LENGTH_OVERFLOW ||
-                           (dv_st == Y11_SAFE_OK &&
-                            (size_t)dv_frame.true_len * 4u > Y11_INBUF_MAX));
-#endif
-                    c->wants_close = 1;
-                    return -1;
-                }
-                pkt_len = (size_t)true_len * 4u;
-            }
-        } else {
-            pkt_len = (size_t)wire_len * 4u;
-            if (pkt_len > Y11_INBUF_MAX) {
-#ifdef Y11_DUAL_VERIFY
-                assert(dv_st == Y11_SAFE_LENGTH_OVERFLOW ||
-                       (dv_st == Y11_SAFE_OK && pkt_len > Y11_INBUF_MAX));
-#endif
-                c->wants_close = 1;
-                return -1;
-            }
-        }
-
-        if (c->in_len - *off < pkt_len) {
-#ifdef Y11_DUAL_VERIFY
-            assert(dv_st == Y11_SAFE_INSUFFICIENT_DATA);
-#endif
+        if (st == Y11_SAFE_INSUFFICIENT_DATA)
             break;              /* wait for the rest of the packet */
+        if (st == Y11_SAFE_LENGTH_OVERFLOW) {
+            /* The extended length is unrepresentable here; the
+             * stream position cannot be trusted past it. */
+            c->wants_close = 1;
+            return -1;
         }
 
 #ifdef Y11_DUAL_VERIFY
-        if (dv_st == Y11_SAFE_OK) {
-            assert(dv_frame.true_len == (uint32_t)pkt_len);
-            assert(dv_frame.opcode == pkt[0]);
-            assert(dv_frame.is_bigreq ==
-                    (uint8_t)(wire_len == 0 && c->big_requests ? 1 : 0));
+        /* Retired C length math, kept as the CI cross-check. */
+        if (st == Y11_SAFE_OK) {
+            uint16_t dv_wire = y11_wire_get16(pkt + 2);
+
+            if (frame.is_bigreq != 0) {
+                assert(dv_wire == 0);
+                assert(frame.true_len ==
+                       y11_wire_get32(pkt + 4) * 4u);
+            } else {
+                assert(dv_wire != 0);
+                assert(frame.true_len == (uint32_t)dv_wire * 4u);
+            }
         } else {
-            /* INVALID_HEADER here is either the length16 == 0 lenient
-             * escape or the Rust opcode-min gate; the handler's own
-             * fixed-part check rejects the packet either way. */
-            assert(dv_st == Y11_SAFE_INVALID_HEADER);
+            /* st == Y11_SAFE_INVALID_HEADER: either the zero length
+             * without the extension, or a below-minimum packet. */
+            uint16_t dv_wire = y11_wire_get16(pkt + 2);
+
+            assert(dv_wire == 0 ? !c->big_requests
+                                : frame.true_len <
+                                      (uint32_t)y11_opcode_min_len(pkt[0]));
         }
 #endif
-        rc = y11_dispatch_req(c, pkt, pkt_len);
-        *off += pkt_len;
+
+        if (st == Y11_SAFE_INVALID_HEADER) {
+            c->sequence_number++;
+            y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0,
+                                    frame.opcode);
+            *off += frame.true_len;
+            continue;
+        }
+        if ((size_t)frame.true_len > Y11_INBUF_MAX) {
+            /* Larger than this server will ever buffer; the receive
+             * cap is I/O policy, so it stays here. */
+            c->wants_close = 1;
+            return -1;
+        }
+
+        rc = y11_dispatch_req(c, pkt, (size_t)frame.true_len);
+        *off += frame.true_len;
         if (rc < 0) {
             c->wants_close = 1;
             return -1;
