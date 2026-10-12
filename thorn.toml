@@ -1,0 +1,2 @@
+[plugins]
+thorn-rs = "../thorn-rs/dist"
