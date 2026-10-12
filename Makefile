@@ -18,9 +18,14 @@ Linux_SEATLIB    = -l:libseat.so.1
 FreeBSD_SEATLIB  = -lseat
 SEATLIB  = $($(UNAME_S)_SEATLIB)
 
-HDRS     = include/y11.h include/wire.h include/kms.h include/libseat.h
+HDRS     = include/y11.h include/wire.h include/kms.h include/libseat.h include/safe.h
 OBJDIR   = out/artifacts
 OBJS     = $(OBJDIR)/main.o $(OBJDIR)/client.o $(OBJDIR)/dispatch.o $(OBJDIR)/atom.o $(OBJDIR)/resource.o $(OBJDIR)/events.o $(OBJDIR)/window.o $(OBJDIR)/pixmap.o $(OBJDIR)/gc.o $(OBJDIR)/render.o $(OBJDIR)/damage.o $(OBJDIR)/input.o $(OBJDIR)/grab.o $(OBJDIR)/session.o $(OBJDIR)/drm.o $(OBJDIR)/scanout.o $(OBJDIR)/shm.o $(OBJDIR)/dri3.o $(OBJDIR)/present.o $(OBJDIR)/property.o $(OBJDIR)/glx.o $(OBJDIR)/selection.o $(OBJDIR)/xrender.o $(OBJDIR)/evdev.o $(OBJDIR)/xkb.o $(OBJDIR)/cursor.o $(OBJDIR)/saver.o
+
+# The wire-protocol validators are a mandatory part of the server.
+RUSTC    = rustc
+SAFESRC  = rust/safe/src/lib.rs rust/safe/src/error.rs rust/safe/src/error_frame.rs rust/safe/src/frame.rs rust/safe/src/handshake.rs rust/safe/src/mask.rs rust/safe/src/opcode.rs rust/safe/src/property.rs rust/safe/src/list.rs rust/safe/src/shm.rs rust/safe/src/reply.rs
+SAFELIB  = $(OBJDIR)/libsafe.a
 
 PREFIX   = /usr/local
 BINDIR   = $(PREFIX)/bin
@@ -30,8 +35,11 @@ all: out/y11
 
 $(OBJS): $(OBJDIR)/.dir
 
-out/y11: $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(DRM_LIBS) $(SEATLIB)
+$(SAFELIB): $(SAFESRC)
+	$(RUSTC) --edition 2021 --crate-name safe --crate-type staticlib -C panic=abort -O -o $@ rust/safe/src/lib.rs
+
+out/y11: $(OBJS) $(SAFELIB)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(SAFELIB) $(LIBS) $(DRM_LIBS) $(SEATLIB)
 
 $(OBJDIR)/.dir:
 	@mkdir -p $(OBJDIR)
