@@ -51,7 +51,10 @@ struct y11_request_frame {
 y11_safe_status y11_handshake_parse_header(const uint8_t *buf, size_t len,
                                            struct y11_handshake_req *out);
 
-/* Frame one request; OK means true_len bytes are buffered. */
+/* Frame one request; OK means true_len bytes are buffered.
+ * INVALID_HEADER fills the frame as well: true_len is the stream
+ * extent to consume while rejecting the request (4 bytes for the
+ * zero-length form without BIG-REQUESTS). */
 y11_safe_status y11_frame_request(const uint8_t *buf, size_t len,
                                   uint8_t big_req_enabled,
                                   struct y11_request_frame *out);

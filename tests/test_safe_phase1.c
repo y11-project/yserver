@@ -127,11 +127,23 @@ static int test_framing(void)
         EXPECT(st == Y11_SAFE_INSUFFICIENT_DATA); /* needs 262140 */
     }
 
-    /* extended form without the extension is a framing violation */
+    /* extended form without the extension is a framing violation;
+     * the frame still carries the 4-byte resync extent */
     {
         uint8_t buf[8] = {9, 0, 0, 0, 0, 0, 0, 4};
         st = y11_frame_request(buf, sizeof(buf), 0, &fr);
         EXPECT(st == Y11_SAFE_INVALID_HEADER);
+        EXPECT(fr.opcode == 9 && fr.wire_len == 0);
+        EXPECT(fr.is_bigreq == 0 && fr.true_len == 4);
+    }
+
+    /* below the opcode minimum: fully buffered, frame filled with the
+     * consume extent so the caller can reject and advance */
+    {
+        uint8_t buf[8] = {42, 0, 1, 0, 0, 0, 0, 0};   /* 4 of 12 bytes */
+        st = y11_frame_request(buf, sizeof(buf), 0, &fr);
+        EXPECT(st == Y11_SAFE_INVALID_HEADER);
+        EXPECT(fr.opcode == 42 && fr.true_len == 4);
     }
 
     /* extended header still incomplete at 7 bytes */

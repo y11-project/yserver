@@ -21,12 +21,13 @@ pub struct Y11RequestFrame {
 /*
  * Frame one request off the stream.  length16 == 0 is the
  * BIG-REQUESTS escape: valid only once the client enabled the
- * extension, else the packet violates the framing (the C server
- * additionally reads such a packet leniently as a bare 4-byte
- * request; the validator stays strict).  Frame fields are always
- * little-endian — only byte-order 'l' connections are admitted.
- * No receive cap is applied here: oversize policy stays with the
- * caller, which rejects true_len values it cannot buffer.
+ * extension, else the framing is invalid.  Frame fields are always
+ * little-endian — only byte-order 'l' connections are admitted.  The
+ * frame out-struct is filled on OK and on INVALID_HEADER: true_len
+ * is the stream extent to consume in both cases (4 bytes for the
+ * degenerate zero-length form).  No receive cap is applied here:
+ * oversize policy stays with the caller, which rejects true_len
+ * values it cannot buffer.
  */
 #[no_mangle]
 pub extern "C" fn y11_frame_request(
@@ -56,6 +57,14 @@ pub extern "C" fn y11_frame_request(
     } else {
         /* Extended 8-byte header; the 32-bit length also counts units. */
         if big_req_enabled == 0 {
+            unsafe {
+                *out = Y11RequestFrame {
+                    opcode,
+                    wire_len,
+                    is_bigreq: 0,
+                    true_len: 4,
+                };
+            }
             return Y11_SAFE_INVALID_HEADER;
         }
         if len < 8 {
@@ -76,13 +85,6 @@ pub extern "C" fn y11_frame_request(
     if len < true_len as usize {
         return Y11_SAFE_INSUFFICIENT_DATA;
     }
-    /* Opcode gate runs only on fully buffered packets: a truncated
-     * prefix is INSUFFICIENT_DATA either way, and the C dispatch loop
-     * waits on the same condition. */
-    if true_len < OPCODE_MIN_LEN[opcode as usize] as u32 {
-        return Y11_SAFE_INVALID_HEADER;
-    }
-
     unsafe {
         *out = Y11RequestFrame {
             opcode,
@@ -91,6 +93,14 @@ pub extern "C" fn y11_frame_request(
             true_len,
         };
     }
+    /* Opcode gate runs only on fully buffered packets: a truncated
+     * prefix is INSUFFICIENT_DATA either way, and the dispatch loop
+     * waits on the same condition.  The frame is already filled, so
+     * the caller consumes the packet while rejecting it. */
+    if true_len < OPCODE_MIN_LEN[opcode as usize] as u32 {
+        return Y11_SAFE_INVALID_HEADER;
+    }
+
     Y11_SAFE_OK
 }
 
