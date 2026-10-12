@@ -18,6 +18,11 @@
 #include "y11.h"
 #include "kms.h"
 #include "wire.h"
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
+
+#include "safe.h"
+#endif
 
 /* Sub-opcodes (presentproto.h). */
 enum {
@@ -191,6 +196,16 @@ static int y11_present_pixmap(struct y11_client *c, const uint8_t *pkt,
     /* 68 fixed bytes, then PRESENTNOTIFY entries (8 bytes each). */
     if (len - data_off < 68u || ((len - data_off - 68u) & 7u) != 0u)
         return y11_dispatch_bad_length(c, pkt[0]);
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 68u, 8u, &dv_n) !=
+            Y11_SAFE_OK ||
+            dv_n != (uint32_t)((len - data_off - 68u) / 8u))
+            return y11_dispatch_bad_length(c, pkt[0]);
+    }
+#endif
 
     window_id = y11_wire_get32(body + 0);
     pixmap_id = y11_wire_get32(body + 4);

@@ -10,6 +10,11 @@
 
 #include "y11.h"
 #include "wire.h"
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
+
+#include "safe.h"
+#endif
 
 /* ---- drawable resolution ------------------------------------------------------ */
 
@@ -189,6 +194,16 @@ int y11_render_req_poly_fill_rectangle(struct y11_client *c,
     if (len - data_off < 8u)
         goto badlength;
     avail = len - data_off - 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
+            Y11_SAFE_OK)
+            goto badlength;
+        assert((size_t)dv_n == avail / 8u);
+    }
+#endif
     if (avail % 8u != 0)
         goto badlength;
     nrects = avail / 8u;
@@ -705,6 +720,16 @@ int y11_render_req_poly_point(struct y11_client *c, const uint8_t *pkt,
     if (len - data_off < 8u)
         goto badlength;
     avail = len - data_off - 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 8u, 4u, &dv_n) !=
+            Y11_SAFE_OK)
+            goto badlength;
+        assert((size_t)dv_n == avail / 4u);
+    }
+#endif
     if (avail % 4u != 0)
         goto badlength;
     npoints = avail / 4u;
@@ -753,6 +778,16 @@ int y11_render_req_poly_line(struct y11_client *c, const uint8_t *pkt,
     if (len - data_off < 8u)
         goto badlength;
     avail = len - data_off - 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 8u, 4u, &dv_n) !=
+            Y11_SAFE_OK)
+            goto badlength;
+        assert((size_t)dv_n == avail / 4u);
+    }
+#endif
     if (avail % 4u != 0)
         goto badlength;
     npoints = avail / 4u;
@@ -807,6 +842,16 @@ int y11_render_req_poly_segment(struct y11_client *c, const uint8_t *pkt,
     if (len - data_off < 8u)
         goto badlength;
     avail = len - data_off - 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
+            Y11_SAFE_OK)
+            goto badlength;
+        assert((size_t)dv_n == avail / 8u);
+    }
+#endif
     if (avail % 8u != 0)
         goto badlength;
     nsegs = avail / 8u;
@@ -848,6 +893,16 @@ int y11_render_req_poly_rectangle(struct y11_client *c, const uint8_t *pkt,
     if (len - data_off < 8u)
         goto badlength;
     avail = len - data_off - 8u;
+#ifdef Y11_DUAL_VERIFY
+    {
+        uint32_t dv_n = 0;
+
+        if (y11_validate_list(len - data_off, 8u, 8u, &dv_n) !=
+            Y11_SAFE_OK)
+            goto badlength;
+        assert((size_t)dv_n == avail / 8u);
+    }
+#endif
     if (avail % 8u != 0)
         goto badlength;
     nrects = avail / 8u;

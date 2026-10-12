@@ -1286,6 +1286,15 @@ int y11_dispatch_req(struct y11_client *c, const uint8_t *pkt, size_t len)
     /* Strict sequence rule: every request packet increments the counter. */
     c->sequence_number++;
 
+#ifdef Y11_DUAL_VERIFY
+    /* The Rust frame gate flags below-minimum packets; the make build
+     * keeps the handler-level fixed-part checks as its defense. */
+    if (len < (size_t)y11_opcode_min_len(opcode)) {
+        y11_dispatch_send_error(c, Y11_ERR_BAD_LENGTH, 0, opcode);
+        return 0;
+    }
+#endif
+
     if (y11_debug) {
         size_t dump = len < 20 ? len : 20;
         size_t i;

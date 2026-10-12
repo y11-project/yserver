@@ -15,6 +15,11 @@
 
 #include "y11.h"
 #include "wire.h"
+#ifdef Y11_DUAL_VERIFY
+#include <assert.h>
+
+#include "safe.h"
+#endif
 
 /* Sub-opcodes (shmproto.h). */
 enum {
@@ -260,6 +265,24 @@ static int y11_shm_put_image(struct y11_client *c, const uint8_t *pkt,
         need = offset + (uint64_t)(src_y + src_height - 1u) * stride +
                (uint64_t)(src_x + src_width) * 4u;
     }
+#ifdef Y11_DUAL_VERIFY
+    {
+        y11_safe_status st = y11_shm_bounds(total_width, src_x, src_y,
+                                            src_width, src_height, depth,
+                                            offset, seg->size);
+        int c_fail = (src_x + src_width > total_width ||
+                      (stride > 0 &&
+                       (uint64_t)(src_y + src_height) > seg->size / stride) ||
+                      need > (uint64_t)seg->size);
+
+        assert((st != Y11_SAFE_OK) == c_fail);
+        if (st == Y11_SAFE_LENGTH_OVERFLOW || c_fail) {
+            y11_dispatch_send_error(c, (uint8_t)Y11_SHM_FIRST_ERROR,
+                                    shmseg_id, pkt[0]);  /* BadShmSeg */
+            return 0;
+        }
+    }
+#endif
     if (src_x + src_width > total_width ||
         (stride > 0 && (uint64_t)(src_y + src_height) > seg->size / stride) ||
         need > (uint64_t)seg->size) {
