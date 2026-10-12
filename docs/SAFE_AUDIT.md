@@ -26,11 +26,11 @@ Wire-shape conventions relied on throughout:
 | Location | Stage | Hazard | Current C implementation | Severity |
 |---|---|---|---|---|
 | `y11_client_handshake:527` | SetupRequest | unaligned cast; byte-order; padding math | 12-byte header wait; struct overlay of `c->in_buf` (offset 0, naturally aligned — safe); `'l'` only, `'B'` refused; version 11 check; `skip = pad4(proto_len) + pad4(data_len)` ≤ 131078, computed in `uint32_t` (no wrap), availability checked before advancing | Low (compat: no big-endian) |
-| `y11_client_handshake:527` | SetupRequest | resource exhaustion (slow loris) | an incomplete handshake can park a connection forever holding up to `Y11_INBUF_MAX` of buffer; bounded by `Y11_MAX_CLIENTS` (64 × 16 MiB ≈ 1 GiB), no per-connection timeout exists | Medium (DoS) |
+| `y11_client_handshake:527` | SetupRequest | resource exhaustion (slow loris) | **fixed**: parked setups expire after `Y11_HANDSHAKE_TIMEOUT_MS` (10 s); the poll loop wakes on the earliest deadline and reaps | Low (closed) |
 | `y11_client_read:180` | ancillary data | fd exhaustion | SCM_RIGHTS fds harvested with `cmsg_len` arithmetic; `in_fds` capped at 8 slots, excess closed immediately; fds released at disconnect | Low (correct) |
 | `y11_client_requests:573` | request framing | length × 4 wraps | `wire_len` (CARD16) × 4 ≤ 262,140 in `size_t` — no wrap on LP64; BIG-REQUESTS `true_len` (CARD32) × 4 checked `> Y11_INBUF_MAX` before use, `< 2` fatal; incomplete requests wait, never exceed the cap | Low on LP64; **documented LP64 assumption**: on a 32-bit `size_t` the `× 4` wraps — the codebase is LP64-only |
 | `y11_client_requests:581` | BIG-REQUESTS | `length == 0` dual meaning | `wire_len == 0` with the extension disabled is treated as a 4-byte request (Xorg behavior); with it enabled, an 8-byte extended header whose `true_len` is validated as above | Low (correct) |
-| `y11_client_send:326` | output path | unbounded growth (DoS) | `out_cap` doubles on demand with **no maximum**; a client that stops reading while triggering large replies (e.g. repeated `GetImage` of a huge area) grows server memory without bound | **Medium (DoS)** — fix: mirror `Y11_INBUF_MAX` cap + wants_close |
+| `y11_client_send` | output path | unbounded growth (DoS) | **fixed**: pending output is capped at `Y11_OUTBUF_MAX` (the receive cap mirrored); a client over it is dropped | Low (closed) |
 | `y11_conn_setup_req` overlay at `client.c:535` | SetupRequest | struct cast of raw buffer | one-time overlay of the malloc'd (aligned) buffer at offset 0; the only raw-cast parse site in the tree; all other parsing goes through `y11_wire_get*` | Low (safe as written) |
 
 ### 1.2 Dispatcher — `src/dispatch.c`
@@ -103,8 +103,8 @@ every output is by caller-provided POD out-parameter.
 | Request framing decode (incl. BIG-REQUESTS) | `y11_client_requests` length math + `Y11_INBUF_MAX` policy | `y11_safe_frame_request` |
 | Value-mask validation | the window.c/gc.c popcount discipline (§1.3) | `y11_validate_value_mask` |
 | Property payload validation | `y11_property_req_change/get` format/stride math | `y11_validate_property_payload` |
-| List payload validation | render.c/xrender.c/present.c divisibility checks (§1.4) | `y11_safe_validate_list` |
-| SHM bounds math | the uint64 stride/need formulas in `y11_shm_put_image` | `y11_safe_shm_bounds` |
+| List payload validation | render.c/xrender.c/present.c divisibility checks (§1.4) | `y11_validate_list` (landed) |
+| SHM bounds math | the uint64 stride/need formulas in `y11_shm_put_image` | `y11_shm_bounds` (landed) |
 | Error frame formatting | `y11_dispatch_send_error` / `y11_dispatch_bad_length` bytes | `y11_format_error_frame` |
 | Reply length sizing | the `pad4(...)/4` CARD32 computations scattered across reply builders | `y11_safe_reply_length_words` |
 
@@ -183,14 +183,18 @@ wire width).  `y11_validate_property_payload` moved to its own module
 and tightened: format outside 8/16/32 is INVALID_HEADER and the padded
 item count must match the request body exactly.
 
+Landed with Phase 4: `y11_validate_list` (fixed-part + element
+divisibility, adopted by the render/present/xrender lists) and
+`y11_shm_bounds` (checked stride/need arithmetic, shadowing
+`y11_shm_put_image`'s C check).  The sweep also carries a C-side
+opcode gate under `Y11_DUAL_VERIFY`, so below-minimum packets take
+BadLength uniformly (Xorg parity) instead of only where handlers
+happen to check.
+
 Remaining surface:
 
 ```c
-/* Phase 3 */
-y11_safe_status y11_safe_validate_list(const uint8_t *body, size_t avail,
-                                       size_t fixed_part,
-                                       uint32_t element_size,
-                                       uint32_t *n_elements);
+/* Phase 5 */
 uint32_t y11_safe_reply_length_words(size_t payload_bytes,
                                      uint8_t *overflow);
 ```
